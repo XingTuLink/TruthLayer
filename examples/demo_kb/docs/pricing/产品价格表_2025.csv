@@ -1,0 +1,6 @@
+product,edition,list_price,unit
+ACME CRM,Pro,129,用户/月
+ACME CRM,Enterprise,299,用户/月
+ACME Helpdesk,Standard,79,坐席/月
+ACME Helpdesk,Pro,159,坐席/月
+ACME Analytics,Team,399,工作区/月

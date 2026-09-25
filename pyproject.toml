@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "truthlayer"
+version = "0.0.1"
+description = "AI Knowledge Reliability Layer — Continuous QA for the knowledge your AI depends on."
+requires-python = ">=3.11"
+license = { text = "AGPL-3.0-only" }
+authors = [{ name = "西安栈上月明软件科技有限公司" }]
+dependencies = [
+  "sqlalchemy>=2.0.30",
+  "alembic>=1.13.2",
+  "psycopg[binary]>=3.1.19",
+  "pgvector>=0.3.0",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.2",
+  "typer>=0.12.3",
+  "pyyaml>=6.0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2",
+]
+parsers = [
+  "pymupdf>=1.24",
+  "python-docx>=1.1",
+  "openpyxl>=3.1",
+]
+openai = [
+  "openai>=1.30",
+]
+
+[project.scripts]
+truthlayer = "truthlayer.cli.app:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/truthlayer"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+  "integration: requires a running PostgreSQL (TRUTHLAYER_DATABASE_URL)",
+  "ollama: requires a local Ollama server with qwen2.5 and bge-m3 (TRUTHLAYER_RUN_OLLAMA=1)",
+]

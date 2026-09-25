@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual envs
+.venv/
+venv/
+
+# Local config / secrets
+.env
+~/.truthlayer/
+
+# Real enterprise data must never enter the public repo (development brief #5, #45.13)
+internal/real_data/**
+!internal/real_data/.gitkeep
+
+# Internal planning / status documents — not part of the public release
+/TruthLayer_AI开发工具开发建议书.md
+/TruthLayer_业务规划书.md
+/TruthLayer_开发进度.md
+/TruthLayer_项目汇报.md
+
+# IDE
+.vscode/
+
+# Generated reports
+*.report.html
+report.json
+
+# IDE / OS
+.idea/
+.DS_Store

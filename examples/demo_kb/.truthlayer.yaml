@@ -1,0 +1,46 @@
+workspace:
+  name: acme-demo
+
+sources:
+  - path: ./docs/policies
+    authority: 0.95
+    type: policy
+  - path: ./docs/pricing
+    authority: 0.9
+    type: pricing
+
+rules:
+  stale_after_days: 365
+  pricing_stale_days: 90
+
+severity:
+  pricing_change: high
+  policy_change: critical
+
+ci:
+  fail_on: critical
+
+version_mapping:
+  - group: product_pricing
+    files:
+      - path: 产品价格表_2025.csv
+        label: "2025"
+      - path: 产品价格表_2026.csv
+        label: "2026"
+        supersedes: 产品价格表_2025.csv
+
+ignore:
+  - "**/internal-test/**"
+
+# 本地 Ollama（零 key）；换成云端只需改 base_url/model 并设置
+# TRUTHLAYER_LLM_API_KEY / TRUTHLAYER_EMBEDDING_API_KEY。
+extraction:
+  provider: openai_compatible
+  model: qwen2.5:7b
+  base_url: http://localhost:11434/v1
+
+embedding:
+  provider: openai_compatible
+  model: bge-m3
+  base_url: http://localhost:11434/v1
+  dimensions: 1024
