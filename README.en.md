@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-green)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-153%20passed-success)](#testing)
+[![Tests](https://img.shields.io/badge/tests-193%20passed-success)](#testing)
 
 Policies, price lists and product manuals keep being revised, but AI assistants
 often quote outdated versions: conflicting figures across documents, policies
@@ -21,6 +21,8 @@ raising traceable warnings before wrong answers reach users.
 - **LLMs only propose, rules decide**: models extract candidates; all conflict/staleness verdicts come from deterministic rules
 - **Embeddings only recall, never adjudicate**: vectors surface candidates; conclusions never rest on similarity scores
 - **Runs fully local**: one OpenAI-compatible protocol covers cloud gateways and local [Ollama](https://ollama.com/), including zero-API-key setups
+- **Closed-loop resolution**: human decisions (accept/keep/false-positive) and ignores are remembered by fingerprint — resolved issues never nag again
+- **Readable reports + CI gate**: self-contained HTML and deterministic JSON share one report model; the `fail_on` threshold maps directly to an exit code
 
 ---
 
@@ -148,7 +150,7 @@ severity:                       # override conflict severity per source type
   policy_change: critical
 
 ci:
-  fail_on: critical             # CI failure threshold (exit code lands in Sprint 5)
+  fail_on: critical             # CI failure threshold: none|critical|high|medium|warning
 
 version_mapping:                # explicit chains: declared only, never guessed from filenames
   - group: product_pricing
@@ -184,13 +186,44 @@ embedding:
 |---|---|
 | `truthlayer check <path>` | Validate config and run document ingestion (parse/chunk/version chains) |
 | `truthlayer scan <path>` | Full scan: ingestion + extraction + embeddings + snapshot + drift detection |
+| `truthlayer drift list [--status …] [--type …] [--workspace …]` | List drifts (open by default) |
+| `truthlayer drift show <id>` | Full detail: old/new facts, verbatim evidence, AI impact, recommended action |
+| `truthlayer drift ignore <id> [--reason …]` | Ignore (remembered by fingerprint; never re-reported) |
+| `truthlayer resolve <id> --decision …` | Record a human decision — see below |
 | `truthlayer --version` | Version info |
 
-> Drift resolution (`drift list/show`, `resolve`), the CI fail_on exit code and
-> HTML/JSON reports are under development — see the [roadmap](#roadmap).
+Reports and the CI gate:
 
-Exit codes: `0` success; `2` system errors (invalid config, database unavailable,
-files failed to parse).
+```powershell
+# Both scan and check emit reports; check spends no LLM tokens — it renders
+# the state persisted by the latest scan.
+truthlayer scan  .\examples\demo_kb --html report.html --output report.json
+truthlayer check .\examples\demo_kb --html report.html
+
+# Resolve a conflict: accept the newer fact with a controlled reason code
+truthlayer resolve <drift-id> --decision accept_newer `
+  --reason-code source_updated --reason "2026 policy is now in force"
+```
+
+Four decisions (Phase 0 supports `scope=single` only):
+
+| decision | meaning | default authority_fact |
+|---|---|---|
+| `accept_newer` | The newer knowledge wins | new fact (override with `--authority-fact-id`) |
+| `keep_old` | The old knowledge still holds | old fact |
+| `manual_override` | Human adjudication (neither side is final) | none |
+| `false_positive` | False alarm (e.g. co-existing tiers, extraction error) | none |
+
+`--reason-code` uses a controlled vocabulary (`newer_version`, `source_updated`,
+`still_valid`, `lower_authority`, `multi_valued`, `extraction_error`,
+`detector_noise`, `duplicate_confirmed`, `manual`, `other`); free text goes into
+`--reason`; the operator defaults to the OS user and can be set with `--by`.
+
+Stable exit-code semantics:
+
+- `0` pass;
+- `1` **open** drifts meet or exceed the `ci.fail_on` threshold (ignored/resolved never block);
+- `2` system errors (invalid config, database unavailable, files failed to parse).
 
 ## Testing
 
@@ -205,12 +238,15 @@ $env:TRUTHLAYER_DATABASE_URL="postgresql+psycopg://..."
 .\.venv\Scripts\python -m pytest
 ```
 
-The suite currently contains **153 passing tests**: unit tests cover
-normalization/hashing/entity resolution/evidence validation and every decision
-branch and negative case of the four detectors; integration tests verify the
-detection, persisted fields and cross-scan fingerprint dedup of all five drift
-types on real PostgreSQL. One additional Ollama end-to-end smoke test is skipped
-by default (set `TRUTHLAYER_RUN_OLLAMA=1` to run it).
+The suite currently contains **193 passing tests**: unit tests cover
+normalization/hashing/entity resolution/evidence validation, every decision
+branch and negative case of the four detectors, the CI threshold matrix and
+deterministic serialization / HTML escaping of the report DTO; integration tests
+verify the detection, persisted fields and cross-scan fingerprint dedup of all
+five drift types, the full Resolution lifecycle (resolve/ignore/double-resolve
+guards), report assembly and the drift/resolve CLI commands on real PostgreSQL.
+One additional Ollama end-to-end smoke test is skipped by default
+(set `TRUTHLAYER_RUN_OLLAMA=1` to run it).
 
 ## Documentation
 
@@ -226,7 +262,7 @@ TruthLayer is currently in **Phase 0 (CLI edition)**, iterating in six sprints:
 - [x] Sprints 1–2: scaffold, domain model, six document formats, version chains
 - [x] Sprint 3: LLM knowledge extraction, Evidence First, embeddings, immutable snapshots
 - [x] Sprint 4: drift engine (four detectors / five types, fingerprint dedup)
-- [ ] Sprint 5: resolution workflow, `drift`/`resolve` CLI, CI fail_on, HTML/JSON reports
+- [x] Sprint 5: resolution workflow, `drift`/`resolve` CLI, CI fail_on, HTML/JSON reports
 - [ ] Sprint 6: evaluation corpus and metric acceptance (Precision / Recall / FPR)
 
 **v0.1 will be formally released after the Phase 0 Gate is passed.** The current

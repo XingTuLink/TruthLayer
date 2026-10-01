@@ -105,6 +105,26 @@ class ResolutionScope(StrEnum):
     SINGLE = "single"
 
 
+class ReasonCode(StrEnum):
+    """Controlled vocabulary for Resolution.reason_code (#27, #28).
+
+    Phase 0 keeps one flat list across all decisions; free-text detail goes
+    into ``reason``. The codes feed future false-positive analysis and rule
+    tuning — no model training is claimed in Phase 0.
+    """
+
+    SOURCE_UPDATED = "source_updated"            # accept_newer: source was revised
+    NEWER_VERSION = "newer_version"              # accept_newer: explicit newer version
+    DUPLICATE_CONFIRMED = "duplicate_confirmed"  # accept_newer: names are the same entity
+    STILL_VALID = "still_valid"                  # keep_old: the old fact still holds
+    LOWER_AUTHORITY = "lower_authority"          # keep_old: the new source is less authoritative
+    MULTI_VALUED = "multi_valued"                # false_positive: tiered / co-existing values
+    EXTRACTION_ERROR = "extraction_error"        # false_positive: the LLM mis-extracted
+    DETECTOR_NOISE = "detector_noise"            # false_positive: deterministic rule misfired
+    MANUAL = "manual"                            # manual_override: human adjudication
+    OTHER = "other"
+
+
 # --- CI (#26) ----------------------------------------------------------------
 
 class CIFailOn(StrEnum):

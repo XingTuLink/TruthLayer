@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TruthLayer 知识可靠性报告 — {{ report.summary.workspace_name }}</title>
+<style>
+  :root {
+    --critical:#b91c1c; --high:#dc2626; --medium:#d97706; --warning:#2563eb;
+    --ok:#15803d; --ink:#1f2937; --muted:#6b7280; --line:#e5e7eb; --bg:#f6f7f9;
+    --card:#ffffff; --shadow:0 1px 2px rgba(16,24,40,.06);
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; padding:28px 16px 64px;
+    font-family:"PingFang SC","Microsoft YaHei","Source Han Sans SC","Noto Sans CJK SC","Hiragino Sans GB",-apple-system,"Segoe UI",sans-serif;
+    color:var(--ink); background:var(--bg); line-height:1.8; font-size:15px;
+  }
+  .wrap { max-width:1020px; margin:0 auto; }
+  .brand { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:20px; padding-bottom:15px; border-bottom:2px solid var(--line); }
+  .brand-left { display:flex; align-items:center; gap:10px; }
+  .brand .logo { height:38px; width:auto; display:block; }
+  .brand .wordmark { font-size:18px; font-weight:700; letter-spacing:.3px; color:#1e3a8a; }
+  .brand .company { font-size:13px; color:var(--muted); text-align:right; }
+  @media (max-width:560px){ .brand{ flex-direction:column; align-items:flex-start; gap:7px; } .brand .company{ text-align:left; } }
+  h1 { font-size:26px; margin:0 0 2px; letter-spacing:.5px; }
+  h2 { font-size:18px; margin:34px 0 12px; padding:10px 0 6px; border-bottom:2px solid var(--line); }
+  .sub { color:var(--muted); font-size:13px; }
+  code,.mono { font-family:ui-monospace,"Cascadia Code",Consolas,monospace; font-size:12.5px; }
+
+  .banner { border-radius:10px; padding:14px 18px; margin:18px 0 6px; font-weight:600; border:1px solid; display:flex; align-items:flex-start; gap:10px; }
+  .banner .dot { width:10px; height:10px; border-radius:50%; flex:none; margin-top:8px; }
+  .banner.pass { color:var(--ok); background:#f0fdf4; border-color:#bbf7d0; }
+  .banner.pass .dot { background:var(--ok); }
+  .banner.fail { color:var(--critical); background:#fef2f2; border-color:#fecaca; }
+  .banner.fail .dot { background:var(--critical); }
+
+  /* —— 顶部指标卡 —— */
+  .cards { display:flex; flex-wrap:wrap; gap:10px; margin:16px 0 6px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 16px; min-width:118px; box-shadow:var(--shadow); }
+  .card .num { font-size:24px; font-weight:700; line-height:1.2; }
+  .card .lbl { color:var(--muted); font-size:12px; }
+
+  /* —— 图表 —— */
+  .charts { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:14px 0 4px; }
+  @media (max-width:760px){ .charts{ grid-template-columns:1fr; } }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; box-shadow:var(--shadow); }
+  .panel h3 { margin:0 0 12px; font-size:13px; color:var(--muted); font-weight:600; }
+  .bar-row { display:flex; align-items:center; gap:10px; margin:9px 0; font-size:12.5px; }
+  .bar-lbl { flex:0 0 74px; color:var(--ink); font-weight:500; }
+  .bar-track { flex:1; height:16px; background:#eef0f3; border-radius:8px; overflow:hidden; display:flex; }
+  .bar-seg { height:100%; }
+  .bar-num { flex:0 0 42px; text-align:right; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .legend { display:flex; flex-wrap:wrap; gap:12px; margin-top:10px; font-size:12px; color:var(--muted); }
+  .legend .swatch { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:4px; }
+
+  /* —— 问题卡片 —— */
+  .issue { background:var(--card); border:1px solid var(--line); border-radius:10px; margin:14px 0; overflow:hidden; box-shadow:var(--shadow); }
+  .issue .head { padding:12px 16px; border-left:6px solid var(--muted); display:flex; align-items:center; flex-wrap:wrap; }
+  .issue.sev-critical .head { border-left-color:var(--critical); }
+  .issue.sev-high .head { border-left-color:var(--high); }
+  .issue.sev-medium .head { border-left-color:var(--medium); }
+  .issue.sev-warning .head { border-left-color:var(--warning); }
+  .badge { display:inline-block; padding:1px 10px; border-radius:999px; font-size:12px; font-weight:600; color:#fff; margin-right:8px; line-height:1.7; }
+  .badge.critical{background:var(--critical)} .badge.high{background:var(--high)}
+  .badge.medium{background:var(--medium)} .badge.warning{background:var(--warning)}
+  .badge.new{background:#7c3aed} .badge.type{background:#374151}
+  .issue .title { font-weight:700; font-size:15.5px; margin:4px 0; }
+  .issue .body { padding:2px 16px 14px; }
+
+  details.tech, details.op { margin:6px 0 4px; font-size:12.5px; }
+  details.tech > summary, details.op > summary { cursor:pointer; color:var(--muted); font-weight:600; list-style:none; font-size:12px; }
+  details.tech > summary::before, details.op > summary::before { content:"▸ "; }
+  details.tech[open] > summary::before, details.op[open] > summary::before { content:"▾ "; }
+  .meta-row { color:var(--muted); font-size:12.5px; margin:2px 0 2px; word-break:break-all; line-height:1.7; }
+
+  .why { background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:10px 14px; margin:10px 0; font-size:14px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:12px 0; }
+  @media (max-width:720px){ .grid{ grid-template-columns:1fr; } }
+  .fact { border:1px solid var(--line); border-radius:10px; padding:12px 14px; background:#fcfcfd; }
+  .fact h4 { margin:0 0 8px; font-size:13px; color:var(--muted); font-weight:600; }
+  .fact .val { font-size:16px; font-weight:700; word-break:break-all; }
+  .fact dl { margin:8px 0 0; display:grid; grid-template-columns:auto 1fr; gap:2px 14px; font-size:12.5px; }
+  .fact dt { color:var(--muted); } .fact dd { margin:0; }
+
+  details.evidence { margin:12px 0; }
+  details.evidence > summary { cursor:pointer; color:var(--warning); font-size:13px; font-weight:600; list-style:none; }
+  details.evidence > summary::before { content:"▸ "; }
+  details.evidence[open] > summary::before { content:"▾ "; }
+  blockquote.evidence {
+    margin:8px 0; padding:10px 16px; border-left:4px solid #c7d2fe;
+    background:#f5f7ff; border-radius:0 8px 8px 0; color:#334155; font-size:14px;
+  }
+  blockquote.evidence::before { content:"❝"; color:#a5b4fc; margin-right:4px; }
+  .evidence .src { color:var(--muted); font-size:12px; display:block; margin-top:6px; }
+
+  .recommend { background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:10px 14px; margin:12px 0; font-size:14px; }
+  .cmd { background:#111827; color:#e5e7eb; border-radius:6px; padding:8px 12px; display:block; margin:8px 0; overflow-x:auto; font-size:12.5px; }
+  .decision { font-size:12px; color:var(--muted); margin:6px 0; }
+  .empty { color:var(--muted); padding:28px 0; font-size:14px; }
+  footer { margin-top:48px; color:var(--muted); font-size:12px; border-top:1px solid var(--line); padding-top:14px; line-height:1.7; }
+  footer .copyright { margin-top:8px; font-size:12px; color:#9ca3af; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  {% set s = report.summary %}
+  {% set sev_cn = {'critical':'严重', 'high':'高', 'medium':'中', 'warning':'警告'} %}
+  {% set fail_cn = {'critical':'严重', 'high':'高', 'medium':'中', 'warning':'警告', 'none':'任意'} %}
+  {% set type_names = {'conflict':'知识冲突', 'confirmed_stale':'已过期', 'possibly_stale':'疑似过期', 'superseded':'文档被取代', 'duplicate':'实体重复'} %}
+
+  <div class="brand">
+    <div class="brand-left">
+      {% if logo_uri %}
+      <img class="logo" src="{{ logo_uri }}" alt="TruthLayer">
+      {% else %}
+      <svg class="logo" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="TruthLayer" style="height:32px">
+        <rect width="32" height="32" rx="8" fill="#1e3a8a"/>
+        <path d="M16 6.5l7.5 3.6v5.2c0 4.5-3.1 8-7.5 9.5-4.4-1.5-7.5-5-7.5-9.5v-5.2L16 6.5z" fill="#ffffff" opacity=".96"/>
+        <path d="M12.3 16.1l2.5 2.5 4.9-5" stroke="#1e3a8a" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      {% endif %}
+      <span class="wordmark">TruthLayer</span>
+    </div>
+    <div class="company">西安栈上月明软件科技有限公司</div>
+  </div>
+
+  <h1>TruthLayer 知识可靠性报告</h1>
+  <div class="sub">
+    工作区 <strong>{{ s.workspace_name }}</strong> ·
+    生成于 {{ s.generated_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}
+    {% if s.knowledge_hash %} · 知识版本 <code>{{ s.knowledge_hash[:16] }}…</code>{% endif %}
+  </div>
+
+  {% if s.ci.triggered %}
+  <div class="banner fail"><span class="dot"></span>
+    <span><strong>检查未通过（退出码 1）</strong>：有 {{ s.ci.blocking_count }} 个问题达到
+    「{{ fail_cn.get(s.ci.fail_on, s.ci.fail_on) }}」级别，建议处理后再上线发布。</span>
+  </div>
+  {% else %}
+  <div class="banner pass"><span class="dot"></span>
+    <span><strong>检查通过</strong>：共 {{ s.ci.open_count }} 个待确认问题，
+    均未达到「{{ fail_cn.get(s.ci.fail_on, s.ci.fail_on) }}」级别，不影响上线。</span>
+  </div>
+  {% endif %}
+
+  <div class="cards">
+    <div class="card"><div class="num">{{ s.documents_total }}</div><div class="lbl">文档数</div></div>
+    <div class="card"><div class="num">{{ s.entities_total }}</div><div class="lbl">实体数</div></div>
+    <div class="card"><div class="num">{{ s.facts_total }}</div><div class="lbl">有效事实</div></div>
+    <div class="card"><div class="num">{{ s.open_total }}</div><div class="lbl">待确认问题</div></div>
+    <div class="card"><div class="num">{{ s.new_this_scan }}</div><div class="lbl">本次新发现</div></div>
+    <div class="card"><div class="num">{{ s.resolved_total }}</div><div class="lbl">已处理</div></div>
+    <div class="card"><div class="num">{{ s.ignored_total }}</div><div class="lbl">已忽略</div></div>
+  </div>
+
+  {% set sev_order = ['critical','high','medium','warning'] %}
+  {% set sev_total = s.ci.by_severity.values() | sum %}
+  {% set status_total = (s.open_total or 0) + (s.resolved_total or 0) + (s.ignored_total or 0) %}
+
+  <div class="charts">
+    <div class="panel">
+      <h3>待确认问题 · 按风险级别</h3>
+      {% for sev in sev_order %}
+        {% set cnt = s.ci.by_severity.get(sev, 0) %}
+        <div class="bar-row">
+          <span class="bar-lbl">{{ sev_cn[sev] }}</span>
+          <div class="bar-track">
+            {% if cnt %}<div class="bar-seg" style="width:{{ (100 * cnt / sev_total) if sev_total else 0 }}%;background:var(--{{ 'critical' if sev=='critical' else sev }})"></div>{% endif %}
+          </div>
+          <span class="bar-num">{{ cnt }}</span>
+        </div>
+      {% endfor %}
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--critical)"></span>严重</span>
+        <span><span class="swatch" style="background:var(--high)"></span>高</span>
+        <span><span class="swatch" style="background:var(--medium)"></span>中</span>
+        <span><span class="swatch" style="background:var(--warning)"></span>警告</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>问题处理进度</h3>
+      <div class="bar-row">
+        <span class="bar-lbl">待确认</span>
+        <div class="bar-track"><div class="bar-seg" style="width:{{ (100 * (s.open_total or 0) / status_total) if status_total else 0 }}%;background:var(--high)"></div></div>
+        <span class="bar-num">{{ s.open_total }}</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-lbl">已处理</span>
+        <div class="bar-track"><div class="bar-seg" style="width:{{ (100 * (s.resolved_total or 0) / status_total) if status_total else 0 }}%;background:var(--ok)"></div></div>
+        <span class="bar-num">{{ s.resolved_total }}</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-lbl">已忽略</span>
+        <div class="bar-track"><div class="bar-seg" style="width:{{ (100 * (s.ignored_total or 0) / status_total) if status_total else 0 }}%;background:var(--muted)"></div></div>
+        <span class="bar-num">{{ s.ignored_total }}</span>
+      </div>
+
+      <h3 style="margin-top:18px;">问题类型分布</h3>
+      {% set type_order = ['confirmed_stale','possibly_stale','conflict','duplicate','superseded'] %}
+      {% for tkey in type_order %}
+        {% set cnt = s.open_by_type.get(tkey, 0) %}
+        {% if cnt %}
+        <div class="bar-row">
+          <span class="bar-lbl" style="flex-basis:64px;font-size:12px;">{{ type_names[tkey] }}</span>
+          <div class="bar-track"><div class="bar-seg" style="width:{{ (100 * cnt / status_total) if status_total else 0 }}%;background:var(--medium)"></div></div>
+          <span class="bar-num">{{ cnt }}</span>
+        </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+
+  {% set sev_sections = [('critical','严重'), ('high','高'), ('medium','中'), ('warning','警告')] %}
+  {% for sev, sev_label in sev_sections %}
+    {% set group_issues = report.issues | selectattr('severity', 'equalto', sev) | list %}
+    {% if group_issues %}
+    <h2>{{ sev_label }}级别需确认的问题（{{ group_issues | length }}）</h2>
+    {% for issue in group_issues %}
+    <div class="issue sev-{{ sev }}">
+      <div class="head">
+        <span class="badge {{ sev }}">{{ sev_cn[sev] }}</span>
+        <span class="badge type">{{ type_names.get(issue.drift_type, issue.drift_type) }}</span>
+        {% if issue.new_this_scan %}<span class="badge new">本次新发现</span>{% endif %}
+      </div>
+      <div class="body">
+        <div class="title">{{ issue.human_title or issue.title }}</div>
+
+        <details class="tech">
+          <summary>技术详情（问题 ID · 检测器 · 置信度）</summary>
+          <div class="meta-row">
+            <code>{{ issue.id }}</code> · 类型 {{ issue.drift_type }} ·
+            置信度 {{ '%.2f' | format(issue.confidence) if issue.confidence is not none else '—' }} ·
+            AI 影响 {{ issue.ai_impact_level }} ·
+            发现于 {{ issue.detected_at.strftime('%Y-%m-%d') }}
+            {% if issue.human_title %}<br>原始标题：{{ issue.title }}{% endif %}
+          </div>
+        </details>
+
+        <div class="why"><strong>问题说明：</strong>{{ issue.why }}</div>
+
+        {% if issue.old_fact or issue.new_fact %}
+        <div class="grid">
+          {% if issue.old_fact %}
+          <div class="fact">
+            <h4>原有记录{% if issue.old_source %} · {{ issue.old_source.filename }}{% endif %}</h4>
+            <div class="val">{{ issue.old_fact.subject }} / {{ issue.old_fact.predicate }} = {{ issue.old_fact.object_display }}</div>
+            <dl>
+              <dt>有效期</dt><dd>{{ issue.old_fact.valid_from or '?' }} ~ {{ issue.old_fact.valid_to or '至今' }}</dd>
+              <dt>状态</dt><dd>{{ issue.old_fact.status }}</dd>
+              {% if issue.old_source %}<dt>来源权威度</dt><dd>{{ issue.old_source.authority_score }}{% if issue.old_source.version_label %} · 版本 {{ issue.old_source.version_label }}{% endif %}</dd>{% endif %}
+            </dl>
+          </div>
+          {% endif %}
+          {% if issue.new_fact %}
+          <div class="fact">
+            <h4>更新记录{% if issue.new_source %} · {{ issue.new_source.filename }}{% endif %}</h4>
+            <div class="val">{{ issue.new_fact.subject }} / {{ issue.new_fact.predicate }} = {{ issue.new_fact.object_display }}</div>
+            <dl>
+              <dt>有效期</dt><dd>{{ issue.new_fact.valid_from or '?' }} ~ {{ issue.new_fact.valid_to or '至今' }}</dd>
+              <dt>状态</dt><dd>{{ issue.new_fact.status }}</dd>
+              {% if issue.new_source %}<dt>来源权威度</dt><dd>{{ issue.new_source.authority_score }}{% if issue.new_source.version_label %} · 版本 {{ issue.new_source.version_label }}{% endif %}</dd>{% endif %}
+            </dl>
+          </div>
+          {% endif %}
+        </div>
+        {% elif issue.old_source or issue.new_source %}
+        <div class="grid">
+          {% if issue.old_source %}
+          <div class="fact"><h4>旧文档 · {{ issue.old_source.filename }}</h4>
+            <dl><dt>来源类型</dt><dd>{{ issue.old_source.source_type or '—' }}</dd><dt>权威度</dt><dd>{{ issue.old_source.authority_score }}</dd></dl></div>
+          {% endif %}
+          {% if issue.new_source %}
+          <div class="fact"><h4>新文档 · {{ issue.new_source.filename }}</h4>
+            <dl><dt>来源类型</dt><dd>{{ issue.new_source.source_type or '—' }}</dd><dt>权威度</dt><dd>{{ issue.new_source.authority_score }}{% if issue.new_source.version_label %} · 版本 {{ issue.new_source.version_label }}{% endif %}</dd></dl></div>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        {% if issue.evidence %}
+        <details class="evidence" open>
+          <summary>相关文档原文（{{ issue.evidence | length }} 处）—— 点击收起</summary>
+          {% for ev in issue.evidence %}
+          <blockquote class="evidence">
+            “{{ ev.quote }}”
+            <span class="src">
+              — {{ ev.filename or '未知来源' }}{% if ev.page %} · 第 {{ ev.page }} 页{% endif %}
+              {% if ev.source_type %} · {{ ev.source_type }}{% endif %}
+              {% if ev.authority_score is not none %} · 权威度 {{ ev.authority_score }}{% endif %}
+            </span>
+          </blockquote>
+          {% endfor %}
+        </details>
+        {% endif %}
+
+        <div class="recommend">
+          <strong>建议处理方式：</strong>{{ issue.recommendation }}
+          <details class="op">
+            <summary>技术操作：如何执行处置</summary>
+            {% set dec_cn = {'accept_newer':'采纳新值', 'keep_old':'保留旧值', 'manual_override':'人工裁定', 'false_positive':'标记误报'} %}
+            <div class="decision">可选决策：{% for d in issue.suggested_decisions %}<code>{{ dec_cn.get(d, d) }}（{{ d }}）</code>{% if not loop.last %} / {% endif %}{% endfor %}</div>
+            <span class="cmd mono">truthlayer resolve {{ issue.id }} --decision &lt;decision&gt; [--reason-code &lt;code&gt; --reason "说明"]</span>
+          </details>
+        </div>
+
+        {% if issue.resolution %}
+        <div class="meta-row">
+          已由 {{ issue.resolution.resolved_by }} 于 {{ issue.resolution.resolved_at.strftime('%Y-%m-%d %H:%M') }}
+          处理为 {{ issue.resolution.decision }}{% if issue.resolution.reason_code %}（{{ issue.resolution.reason_code }}）{% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+  {% endfor %}
+
+  {% if not report.issues %}
+  <p class="empty">当前没有待确认的知识问题。已处理 {{ s.resolved_total }} 个，已忽略 {{ s.ignored_total }} 个。</p>
+  {% endif %}
+
+  <footer>
+    TruthLayer v{{ s.tool_version }} · 检测器 {{ s.detector_version }} ·
+    本报告为静态文件，由确定性检测规则生成；LLM 仅负责候选抽取，所有判定均可回溯到上方文档原文。
+    图表为内联数据可视化，不含任何外部脚本与网络依赖。
+    <div class="copyright">© 2026 西安栈上月明软件科技有限公司 · TruthLayer · 保留所有权利</div>
+  </footer>
+</div>
+</body>
+</html>

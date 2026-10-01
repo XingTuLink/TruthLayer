@@ -15,12 +15,14 @@ TruthLayer 是一个 CLI-first 的本地/CI 工具：一次扫描把企业文档
 ┌─────────────────────────────────────────────────────────────┐
 │  CLI（Typer 薄壳，只负责参数/事务/输出，不写业务逻辑）          │
 ├─────────────────────────────────────────────────────────────┤
-│  ingestion service → extraction service → detection service │
-├──────────┬──────────────────┬──────────────────┬────────────┤
-│ ingestion│   extraction     │    detection     │ providers  │
-│ 解析/切块 │  LLM 抽取/实体归一 │  状态视图/检测器   │ OpenAI 兼容 │
-│ 版本链    │  证据/哈希/快照    │  指纹/编排落库     │ LLM/Embed  │
-├──────────┴──────────────────┴──────────────────┴────────────┤
+│ ingestion → extraction → detection → resolution → reporting │
+├──────────┬────────────┬──────────┬────────────┬────────────┤
+│ ingestion│ extraction │detection │ resolution │ reporting  │
+│ 解析/切块 │ LLM 抽取   │状态视图/ │ 处置/忽略   │ Report DTO │
+│ 版本链    │  证据/快照  │检测器/指纹│ 原因码/权威 │ JSON/HTML  │
+├──────────┴────────────┴──────────┴────────────┴────────────┤
+│  providers：OpenAI 兼容 LLM / Embedder（云端 / 网关 / Ollama） │
+├─────────────────────────────────────────────────────────────┤
 │  domain：枚举 / FactClaim / Evidence（纯规则，零基础设施依赖）  │
 ├─────────────────────────────────────────────────────────────┤
 │  SQLAlchemy 2 ORM + Alembic  ·  PostgreSQL 15 + pgvector     │
@@ -36,13 +38,16 @@ TruthLayer 是一个 CLI-first 的本地/CI 工具：一次扫描把企业文档
 | `truthlayer.ingestion` | 文件发现、6 种格式解析、编码兜底、规范化、哈希、切块、显式版本链 | 不认识 LLM |
 | `truthlayer.extraction` | 抽取 schema/prompt、实体解析、事实与证据落库、知识哈希、不可变快照 | 通过 providers 抽象调用模型 |
 | `truthlayer.detection` | 知识状态加载、候选/指纹、四个检测器、检测编排服务 | 检测器不接触 session/ORM |
+| `truthlayer.resolution` | 漂移查询、人工处置（四决策/原因码/权威事实）、忽略 | service 只 flush，决策不可变更（one-shot） |
+| `truthlayer.reporting` | Report DTO、报告组装、CI 阈值策略、中文叙述、确定性 JSON、Jinja2 HTML | DTO 是 CLI/JSON/HTML 的唯一事实来源 |
 | `truthlayer.providers` | OpenAI 兼容的 LLM/Embedder 实现（云端、网关、Ollama 通用） | 协议化，可替换 |
 | `truthlayer.cli` | Typer 命令、事务提交、终端输出 | 薄壳，禁止写业务规则 |
 
 ### 两条事务纪律
 
 1. **service 层只 `flush` 不 `commit`**：一次 scan 是 ingestion → extraction →
-   detection 串起来的单一事务，由 CLI 在全部成功后统一提交，失败整体回滚。
+   detection（报告 DTO 在同一事务内组装）串起来的单一事务，由 CLI 在全部成功后
+   统一提交并在提交后写报告文件，失败整体回滚。resolution 命令则是独立短事务。
 2. **检测器只读不可变视图**：`KnowledgeState`（frozen dataclass）在检测开始前
    一次性从 ORM 加载，检测器无法写库、也无法依赖查询副作用，保证结果可重放。
 
@@ -58,7 +63,7 @@ workspaces
 │                        └── entities ── entity_aliases
 ├── scan_runs           （每次扫描的完整留痕，含 detector_version）
 ├── drifts              （target 多态：可指向 fact 或 document，刻意无 FK）
-├── resolutions         （Sprint 5）
+├── resolutions         （drift_id UNIQUE：一条漂移至多一次处置，one-shot）
 └── snapshots + snapshot_facts / snapshot_entities（不可变冻结）
 ```
 
@@ -115,6 +120,50 @@ severity 与 ai_impact_level 是两个独立概念，分开存储。
 与历史所有漂移（含 ignored/resolved）的指纹比对去重，新发现才落库；
 `detector_version`（当前 `drift-core-v1`）写入 scan_run，检测规则演进后可追溯。
 
+### 4.4 处置（resolution）
+
+漂移有三种状态：`open → ignored / resolved`，由 `ResolutionService` 管理：
+
+- **四种决策**：`accept_newer`（采纳新事实）、`keep_old`（保留旧事实）、
+  `manual_override`（人工裁定）、`false_positive`（误报）；
+- **受控原因码**（`ReasonCode` 枚举，10 个）：自由文本原因与结构化原因码并存，
+  原因码用于后续统计，文本用于人读；
+- **权威事实规则**：accept_newer/keep_old 默认指向新/旧事实，可显式覆盖，
+  但覆盖值必须是该漂移自身的 old/new fact；文档级漂移（superseded）无 fact，
+  禁止指定；manual/false_positive 不产生权威事实；
+- **one-shot 不可变更**：`resolutions.drift_id` 为 UNIQUE，已 resolved 的漂移
+  不能再 resolve 或 ignore（误处置需数据层修正，审计留痕不被静默覆盖）；
+  ignore 幂等（重复 ignore 不报错），但 resolved 永远不能转 ignored；
+- Phase 0 仅支持 `scope=single`、`pattern_jsonb=NULL`（无批量模式处置）；
+- 忽略原因存入 `drifts.detail_jsonb["ignore_reason"]`，状态留在 drift 表。
+
+处置的核心意义在 **Remember 闭环**：指纹去重比对的是全量历史（含已处置），
+被忽略/处置过的问题在后续扫描中永远显示 already known，不再打扰；CI 门禁
+也只统计 open 漂移。
+
+### 4.5 报告（reporting）
+
+终端输出、JSON 文件、HTML 文件共享同一个 Pydantic DTO（`ReportDTO`），
+不允许任何渲染层自行查库或拼装规则：
+
+```text
+ReportBuilder（查库组装 DTO，唯一接触 ORM 的报告组件）
+   └─▶ ReportDTO(summary, issues)
+          ├─▶ render_json   确定性序列化（sort_keys、ensure_ascii=False）
+          └─▶ render_html   Jinja2 模板（autoescape 显式包含 .j2）
+```
+
+- **每个 issue**：五要素（标题 / 为什么是问题 / 建议操作 / 建议决策、
+  五类型各自的中文叙述）+ 新旧事实片段 + 新旧来源 + 去重后的逐字证据 +
+  处置记录；证据悬空（文档/事实后来被删除，FK SET NULL）不导致报告崩溃；
+- **summary**：文档/实体/事实计数、本次新增与抑制数、三状态计数、
+  按类型与严重级分布、本次扫描使用的知识哈希；
+- **CI badge**：纯函数策略 `severity ≥ fail_on` 即阻断（阈值含等号，`none`
+  永远放行），结果写入 DTO 并由 CLI 映射为退出码 `1`；
+- HTML 是单文件内联样式、零外部依赖，可直接作为 CI artifact 归档；
+- `check` 只渲染最近一次 scan 持久化的状态（不调用 LLM，不花 token），
+  scan 则在事务提交后写文件（保证报告反映的是已落库状态）。
+
 ## 5. 配置与凭据
 
 - `.truthlayer.yaml` 全部字段由 Pydantic 强校验（`extra="forbid"`，未知键即报错），
@@ -127,10 +176,11 @@ severity 与 ai_impact_level 是两个独立概念，分开存储。
 
 ## 6. 错误处理
 
-领域层定义 8 类带语义的错误（配置/解析/Provider/数据库/领域校验等）。
-CLI 退出码：`0` 成功；`2` 系统错误（配置非法、数据库不可用、存在解析失败文件）；
-fail_on 阈值失败码 `1` 将在 Sprint 5 启用。失败的 scan 也会在 `scan_runs`
-留痕（status=failed、error_message）。
+领域层定义带语义的错误类型（配置/解析/Provider/数据库/领域校验/用户输入等）。
+CLI 退出码（稳定契约）：`0` 成功；`1` fail_on 门禁失败（存在达到阈值的 open
+漂移，已忽略/已处置不阻断）；`2` 系统错误（配置非法、数据库不可用、存在解析
+失败文件、报告写盘失败）。系统错误的优先级高于门禁：`2 > 1 > 0`。失败的 scan
+也会在 `scan_runs` 留痕（status=failed、error_message）。
 
 ## 7. 测试架构
 
@@ -139,7 +189,8 @@ fail_on 阈值失败码 `1` 将在 Sprint 5 启用。失败的 scan 也会在 `s
   通用属性误归并等）；
 - **集成测试**（`tests/integration/`）：每个会话使用一次性隔离库 `<dbname>_it`，
   自动 `alembic upgrade head` / 结束 `downgrade base`，直接构造 ORM 行而不调用 LLM，
-  覆盖五类型漂移的检出、字段与跨扫描去重；
+  覆盖五类型漂移的检出、字段与跨扫描去重、Resolution 全生命周期（含重复处置防护、
+  权威事实规则）、报告组装以及 drift/resolve CLI 命令；
 - **Ollama 冒烟测试**：默认 skip，`TRUTHLAYER_RUN_OLLAMA=1` 时对真实模型端到端验证，
   CI 无 Ollama 不受影响。
 
@@ -150,4 +201,6 @@ fail_on 阈值失败码 `1` 将在 Sprint 5 启用。失败的 scan 也会在 `s
 3. **Embedding 只召回不裁决**：任何漂移结论不得仅由向量相似度得出；
 4. **确定性优先**：知识哈希、检测指纹、切块编号、文件排序全部可复现；
 5. **显式优于猜测**：版本链只认配置声明，歧义默认拒绝并告警；
-6. **CLI 是薄壳**：业务逻辑只允许出现在 domain/service 层。
+6. **CLI 是薄壳**：业务逻辑只允许出现在 domain/service 层；
+7. **处置即审计**：决策 one-shot 不可改，原因码受控、自由说明留痕，处置不删除证据；
+8. **单一报告模型**：终端/JSON/HTML 必须渲染同一个 DTO，渲染层不做判定、不查库。

@@ -18,14 +18,16 @@ be reused directly by an API.
 ┌─────────────────────────────────────────────────────────────┐
 │  CLI (thin Typer shell: args / transactions / output only)   │
 ├─────────────────────────────────────────────────────────────┤
-│  ingestion service → extraction service → detection service │
-├──────────┬──────────────────┬──────────────────┬────────────┤
-│ ingestion│   extraction     │    detection     │ providers  │
-│ parse/   │  LLM extraction/ │  state views /   │ OpenAI-    │
-│ chunk    │  entity resolve  │  detectors       │ compatible │
-│ versions │  evidence/hash/  │  fingerprints /  │ LLM/Embed  │
-│          │  snapshots       │  orchestration   │            │
-├──────────┴──────────────────┴──────────────────┴────────────┤
+│ ingestion → extraction → detection → resolution → reporting │
+├──────────┬────────────┬──────────┬────────────┬────────────┤
+│ ingestion│ extraction │detection │ resolution │ reporting  │
+│ parse/   │ LLM        │ state /  │ resolve /  │ Report DTO │
+│ chunk    │ extraction │detectors │ ignore     │ JSON/HTML  │
+│ versions │ snapshots  │fingerpr. │ reason/    │ CI badge   │
+│          │            │          │ authority  │ narratives │
+├──────────┴────────────┴──────────┴────────────┴────────────┤
+│  providers: OpenAI-compatible LLM / Embedder (cloud/Ollama)  │
+├─────────────────────────────────────────────────────────────┤
 │  domain: enums / FactClaim / Evidence (pure, zero-infra)     │
 ├─────────────────────────────────────────────────────────────┤
 │  SQLAlchemy 2 ORM + Alembic  ·  PostgreSQL 15 + pgvector     │
@@ -41,14 +43,18 @@ be reused directly by an API.
 | `truthlayer.ingestion` | Discovery, six parsers, encoding fallback, normalization, hashing, chunking, explicit version chains | Knows nothing about LLMs |
 | `truthlayer.extraction` | Extraction schema/prompts, entity resolution, fact/evidence persistence, knowledge hash, immutable snapshots | Calls models through the providers abstraction |
 | `truthlayer.detection` | Knowledge-state loading, candidates/fingerprints, four detectors, orchestration service | Detectors never touch a session or the ORM |
+| `truthlayer.resolution` | Drift queries, human resolution (four decisions / reason codes / authority fact), ignore | Services only flush; decisions are immutable (one-shot) |
+| `truthlayer.reporting` | Report DTO, assembly, CI threshold policy, Chinese narratives, deterministic JSON, Jinja2 HTML | The DTO is the single source of truth for CLI/JSON/HTML |
 | `truthlayer.providers` | OpenAI-compatible LLM/Embedder implementations (cloud, gateways, Ollama) | Protocol-based and replaceable |
 | `truthlayer.cli` | Typer commands, transaction commit, terminal output | Thin shell; no business rules allowed |
 
 ### Two transaction disciplines
 
 1. **Services only `flush`, never `commit`**: a scan is one transaction spanning
-   ingestion → extraction → detection. The CLI commits once after everything
-   succeeds; any failure rolls the whole run back.
+   ingestion → extraction → detection (the report DTO is assembled inside the
+   same transaction). The CLI commits once after everything succeeds and writes
+   report files post-commit; any failure rolls the whole run back. The
+   resolution command is a separate short transaction.
 2. **Detectors read only immutable views**: `KnowledgeState` (frozen dataclasses)
    is loaded once from the ORM before detection starts. Detectors cannot write
    to the database or depend on query side effects, which makes results
@@ -66,7 +72,7 @@ workspaces
 │                          └── entities ── entity_aliases
 ├── scan_runs           （full audit trail of every scan, incl. detector_version)
 ├── drifts              （polymorphic target: fact or document, deliberately no FK)
-├── resolutions         （Sprint 5)
+├── resolutions         （drift_id UNIQUE: at most one decision per drift — one-shot)
 └── snapshots + snapshot_facts / snapshot_entities (immutable freeze)
 ```
 
@@ -139,6 +145,63 @@ ignored/resolved ones) — only genuinely new findings are persisted. The
 `detector_version` (currently `drift-core-v1`) is recorded on the scan run so
 rule evolution stays traceable.
 
+### 4.4 Resolution
+
+Drifts move through three states — `open → ignored / resolved` — managed by
+`ResolutionService`:
+
+- **Four decisions**: `accept_newer`, `keep_old`, `manual_override`,
+  `false_positive`;
+- **Controlled reason codes** (the 10-value `ReasonCode` enum) coexist with a
+  free-text reason: codes feed future statistics, text serves humans;
+- **Authority-fact rules**: accept_newer/keep_old default to the new/old fact
+  and can be overridden explicitly, but the override must be one of the drift's
+  own old/new facts. Document-level drifts (superseded) have no facts and
+  reject an authority id; manual/false_positive produce no authority fact;
+- **One-shot, immutable**: `resolutions.drift_id` is UNIQUE; a resolved drift
+  can neither be re-resolved nor ignored (correcting a mistake requires a
+  data-layer fix — the audit trail is never silently overwritten). Ignoring is
+  idempotent, but a resolved drift can never become ignored;
+- Phase 0 supports `scope=single` and `pattern_jsonb=NULL` only (no bulk
+  pattern-based resolution);
+- The ignore reason is stored in `drifts.detail_jsonb["ignore_reason"]`; the
+  status stays on the drift row.
+
+The point of resolution is the **Remember loop**: fingerprint dedup compares
+against all history, including resolved/ignored findings, so handled issues
+always appear as already known on later scans and the CI gate counts only open
+drifts.
+
+### 4.5 Reporting
+
+Terminal output, JSON files and HTML files share one Pydantic DTO
+(`ReportDTO`); no renderer may query the database or embed rules of its own:
+
+```text
+ReportBuilder (queries the DB and assembles the DTO — the only report
+   │           component touching the ORM)
+   └─▶ ReportDTO(summary, issues)
+          ├─▶ render_json   deterministic (sort_keys, ensure_ascii=False)
+          └─▶ render_html   Jinja2 template (autoescape explicitly includes .j2)
+```
+
+- **Each issue**: the five elements (title, why it is a problem, recommended
+  action, suggested decisions — with type-specific Chinese narratives) plus
+  old/new fact snippets, old/new sources, deduplicated verbatim evidence and
+  the resolution record. Dangling references (facts/documents deleted later,
+  FK SET NULL) never crash the report;
+- **Summary**: document/entity/fact counts, new vs suppressed this scan, the
+  three status counts, distributions by type and severity, and the knowledge
+  hash used by the scan;
+- **CI badge**: a pure-function policy (`severity ≥ fail_on`, threshold
+  inclusive; `none` always passes) feeds the DTO and maps to exit code `1`
+  in the CLI;
+- HTML is a single self-contained file with inline CSS and zero external
+  dependencies — ready to archive as a CI artifact;
+- `check` renders the state persisted by the latest scan (no LLM calls, no
+  token spend); `scan` writes report files after the transaction commits, so a
+  report always reflects committed state.
+
 ## 5. Configuration and credentials
 
 - Every `.truthlayer.yaml` field is strongly validated by Pydantic
@@ -154,11 +217,13 @@ rule evolution stays traceable.
 
 ## 6. Error handling
 
-The domain layer defines eight semantic error categories (config, parsing,
-provider, database, domain validation, …). CLI exit codes: `0` success;
-`2` system error (invalid config, unreachable database, files that failed to
-parse); the fail_on threshold code `1` arrives in Sprint 5. Failed scans are
-also recorded in `scan_runs` (status=failed, error_message).
+The domain layer defines semantic error categories (config, parsing, provider,
+database, domain validation, user input, …). CLI exit codes are a stable
+contract: `0` success; `1` fail_on gate failure (open drifts meet the threshold;
+ignored/resolved findings never block); `2` system error (invalid config,
+unreachable database, files that failed to parse, report write failure). System
+errors outrank the gate: `2 > 1 > 0`. Failed scans are also recorded in
+`scan_runs` (status=failed, error_message).
 
 ## 7. Test architecture
 
@@ -170,7 +235,8 @@ also recorded in `scan_runs` (status=failed, error_message).
   database `<dbname>_it`, automatically running `alembic upgrade head` and
   `downgrade base`. Rows are constructed directly without calling an LLM,
   covering detection, persisted fields and cross-scan dedup for all five drift
-  types;
+  types, the full Resolution lifecycle (including double-resolve guards and
+  authority-fact rules), report assembly and the drift/resolve CLI commands;
 - **Ollama smoke test**: skipped by default; with `TRUTHLAYER_RUN_OLLAMA=1`
   it runs end-to-end against real models, so CI without Ollama is unaffected.
 
@@ -187,4 +253,9 @@ also recorded in `scan_runs` (status=failed, error_message).
 5. **Explicit over guessing**: version chains come only from config; ambiguity
    in parsing or entity resolution defaults to rejection or warnings;
 6. **The CLI is a thin shell**: business rules live only in the domain/service
-   layers, ready for direct API reuse.
+   layers, ready for direct API reuse;
+7. **Resolution is audit**: decisions are one-shot and immutable, reason codes
+   are controlled, free-text reasons are retained, and resolution never
+   deletes evidence;
+8. **One report model**: terminal/JSON/HTML render the same DTO; renderers
+   neither adjudicate nor query the database.

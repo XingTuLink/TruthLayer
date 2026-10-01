@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-green)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-153%20passed-success)](#测试)
+[![Tests](https://img.shields.io/badge/tests-193%20passed-success)](#测试)
 
 企业制度、价格表、产品手册会持续修订，但 AI 助手引用的往往是旧版本：跨文档口径
 冲突、已被新版本取代的政策、无人复核的过期数字、同一实体的多种异写……TruthLayer
@@ -18,6 +18,8 @@
 - **LLM 只做候选，规则才裁决**：大模型负责抽取，冲突/过期判定全部由确定性规则完成
 - **Embedding 只召回不裁决**：向量用于候选召回，最终结论不依赖向量相似度
 - **本地可跑**：OpenAI 兼容协议，云端模型网关与本机 [Ollama](https://ollama.com/) 通用，支持零 API Key
+- **闭环处置**：人工决策（采纳/保留/误报）与忽略会被指纹记住，问题不会在下次扫描中重复打扰
+- **可读报告 + CI 门禁**：自包含 HTML / 确定性 JSON 报告共用同一数据模型，`fail_on` 阈值直接映射退出码
 
 ---
 
@@ -142,7 +144,7 @@ severity:                       # 按来源类型覆盖冲突严重级
   policy_change: critical
 
 ci:
-  fail_on: critical             # CI 失败阈值（Sprint 5 启用退出码）
+  fail_on: critical             # CI 失败阈值：none|critical|high|medium|warning
 
 version_mapping:                # 显式版本链：只承认声明，绝不按文件名猜
   - group: product_pricing
@@ -178,12 +180,43 @@ embedding:
 |---|---|
 | `truthlayer check <path>` | 校验配置并执行文档接入（解析/切块/版本链） |
 | `truthlayer scan <path>` | 完整扫描：接入 + 抽取 + 向量 + 快照 + 漂移检测 |
+| `truthlayer drift list [--status …] [--type …] [--workspace …]` | 列出漂移（默认只看 open） |
+| `truthlayer drift show <id>` | 单条详情：新旧事实、原文证据、AI 影响与建议操作 |
+| `truthlayer drift ignore <id> [--reason …]` | 忽略（指纹记住，不再重复报出） |
+| `truthlayer resolve <id> --decision …` | 人工处置，见下方决策说明 |
 | `truthlayer --version` | 版本信息 |
 
-> 漂移处置（`drift list/show`、`resolve`）、CI fail_on 退出码与
-> HTML/JSON 报告正在开发中，见[路线图](#路线图)。
+报告与 CI 门禁：
 
-退出码：`0` 正常；`2` 配置/数据库/解析等系统错误。
+```powershell
+# scan 与 check 都可输出报告；check 不调用 LLM，渲染的是最近一次扫描的状态
+truthlayer scan  .\examples\demo_kb --html report.html --output report.json
+truthlayer check .\examples\demo_kb --html report.html
+
+# 处置一条冲突：采纳新事实，记录受控原因码与说明
+truthlayer resolve <drift-id> --decision accept_newer `
+  --reason-code source_updated --reason "2026 新政策已发布"
+```
+
+四种决策（Phase 0 仅支持 `scope=single`，单条处置）：
+
+| decision | 含义 | authority_fact 默认 |
+|---|---|---|
+| `accept_newer` | 采纳新知识 | 新事实（可 `--authority-fact-id` 覆盖） |
+| `keep_old` | 保留旧知识 | 旧事实 |
+| `manual_override` | 人工裁定（新旧都不是最终答案） | 无 |
+| `false_positive` | 误报（如分级并存、抽取错误） | 无 |
+
+`--reason-code` 使用受控词表（`newer_version` / `source_updated` /
+`still_valid` / `lower_authority` / `multi_valued` / `extraction_error` /
+`detector_noise` / `duplicate_confirmed` / `manual` / `other`），自由说明写
+`--reason`；处置人默认取系统用户名，可用 `--by` 指定。
+
+退出码（稳定语义）：
+
+- `0` 通过；
+- `1` 存在达到或超过 `ci.fail_on` 阈值的**开放**漂移（已忽略/已处置不阻断）；
+- `2` 配置/数据库/解析等系统错误。
 
 ## 测试
 
@@ -197,9 +230,11 @@ $env:TRUTHLAYER_DATABASE_URL="postgresql+psycopg://..."
 .\.venv\Scripts\python -m pytest
 ```
 
-当前测试套件 **153 个测试全部通过**：单元测试覆盖规范化/哈希/实体解析/证据校验/
-四个检测器的全部判定规则与负例；集成测试在真实 PostgreSQL 上覆盖五类型漂移的
-检出、落库字段与跨扫描指纹去重。另有 1 个 Ollama 真实冒烟测试默认跳过
+当前测试套件 **193 个测试全部通过**：单元测试覆盖规范化/哈希/实体解析/证据校验/
+四个检测器的全部判定规则与负例、CI 阈值矩阵、报告 DTO 的确定性序列化与 HTML
+转义；集成测试在真实 PostgreSQL 上覆盖五类型漂移的检出、落库字段、跨扫描指纹去重、
+Resolution 全生命周期（处置/忽略/重复处置防护）、报告组装以及 drift/resolve CLI
+命令。另有 1 个 Ollama 真实冒烟测试默认跳过
 （设置 `TRUTHLAYER_RUN_OLLAMA=1` 才运行）。
 
 ## 文档
@@ -216,7 +251,7 @@ TruthLayer 当前处于 **Phase 0（CLI 版本）**，按 6 个 Sprint 迭代：
 - [x] Sprint 1–2：项目骨架、领域模型、6 种文档格式接入、版本链
 - [x] Sprint 3：LLM 知识抽取、Evidence First、向量与不可变快照
 - [x] Sprint 4：漂移检测引擎（四检测器 / 五类型、指纹去重）
-- [ ] Sprint 5：漂移处置流程、`drift`/`resolve` CLI、CI fail_on、HTML/JSON 报告
+- [x] Sprint 5：漂移处置流程、`drift`/`resolve` CLI、CI fail_on、HTML/JSON 报告
 - [ ] Sprint 6：评测集与指标验收（Precision / Recall / FPR）
 
 **Phase 0 Gate 验收通过后正式发布 v0.1。** 当前版本号为 `0.0.1`（开发中）。

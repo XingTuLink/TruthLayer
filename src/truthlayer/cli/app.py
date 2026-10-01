@@ -5,24 +5,34 @@ Exit codes follow #26: 0 pass, 1 fail_on threshold, 2 system/config/runtime.
 
 from __future__ import annotations
 
+import getpass
 import logging
+import uuid
 from pathlib import Path
 
 import typer
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from truthlayer import __version__
-from truthlayer.db.orm import ScanRun
+from truthlayer.db.orm import ScanRun, Workspace
 from truthlayer.db.session import SessionLocal
 from truthlayer.detection.service import (
     DETECTOR_VERSION,
     DetectionResult,
     DriftDetectionService,
 )
+from truthlayer.domain.enums import DriftStatus, DriftType
 from truthlayer.domain.errors import TruthLayerError
 from truthlayer.extraction.service import ExtractionResult
 from truthlayer.ingestion.service import IngestionResult
 from truthlayer.providers.factory import build_embedder, build_llm
+from truthlayer.reporting.builder import ReportBuilder
+from truthlayer.reporting.dto import IssueReport, ReportDTO
+from truthlayer.reporting.html_report import render_html
+from truthlayer.reporting.humanize import short_title
+from truthlayer.reporting.json_report import render_json
+from truthlayer.resolution.service import ResolutionService
 from truthlayer.services.workspace import prepare_check
 
 app = typer.Typer(
@@ -116,8 +126,8 @@ def _print_ingestion_summary(result: IngestionResult) -> None:
         )
     else:
         typer.secho(
-            "tip: run 'truthlayer scan' to extract facts and write a snapshot "
-            "(drift detection arrives in Sprint 4)",
+            "tip: 'truthlayer scan' extracts facts, detects drift and writes a "
+            "snapshot; 'truthlayer drift list' reviews open findings",
             fg=typer.colors.BLUE,
         )
 
@@ -128,14 +138,18 @@ def check(
         ..., exists=False, help="Workspace directory or .truthlayer.yaml file."
     ),
     html: Path | None = typer.Option(
-        None, "--html", help="Write HTML report to this path (Sprint 5)."
+        None, "--html", help="Write a self-contained HTML report to this path."
     ),
     output: Path | None = typer.Option(
-        None, "--output", help="Write JSON report to this path (Sprint 5)."
+        None, "--output", help="Write a deterministic JSON report to this path."
     ),
     verbose: bool = typer.Option(False, "--verbose", help="Verbose logging."),
 ) -> None:
-    """Ingest and check a knowledge workspace (#31)."""
+    """Ingest and check a knowledge workspace (#31).
+
+    --html/--output render the latest persisted drift state for the workspace
+    without spending LLM tokens; run 'truthlayer scan' first to populate it.
+    """
     _configure_logging(verbose)
     result = _run_ingestion(path)
     if result is None:
@@ -143,14 +157,12 @@ def check(
 
     _print_ingestion_summary(result)
 
+    report_ok = True
     if html is not None or output is not None:
-        typer.secho(
-            "note: --html/--output reports arrive in Sprint 5",
-            fg=typer.colors.YELLOW,
-        )
+        report_ok = _write_latest_report(path, html, output)
 
     # Parser failures are runtime errors (#26, #34).
-    raise typer.Exit(code=2 if result.failed else 0)
+    raise typer.Exit(code=2 if result.failed or not report_ok else 0)
 
 
 def _print_extraction_summary(result: ExtractionResult) -> None:
@@ -238,12 +250,106 @@ def _print_detection_summary(result: DetectionResult) -> None:
         )
 
 
+def _print_ci_banner(report: ReportDTO) -> None:
+    ci = report.summary.ci
+    if ci.fail_on == "none":
+        typer.secho(
+            "CI        : fail_on=none — threshold checking disabled",
+            fg=typer.colors.BLUE,
+        )
+        return
+    if ci.triggered:
+        typer.secho(
+            f"CI        : FAIL — {ci.blocking_count} open drift(s) at or above "
+            f"fail_on={ci.fail_on} (exit code 1)",
+            fg=typer.colors.RED,
+            err=True,
+        )
+    else:
+        typer.secho(
+            f"CI        : pass — {ci.open_count} open, all below "
+            f"fail_on={ci.fail_on}",
+            fg=typer.colors.GREEN,
+        )
+
+
+def _write_report_files(
+    report: ReportDTO,
+    html_path: Path | None,
+    json_path: Path | None,
+) -> bool:
+    """Render after commit. Returns False on filesystem errors (#34)."""
+    try:
+        if json_path is not None:
+            json_path.parent.mkdir(parents=True, exist_ok=True)
+            json_path.write_text(render_json(report), encoding="utf-8")
+            typer.secho(f"JSON report: {json_path}", fg=typer.colors.GREEN)
+        if html_path is not None:
+            html_path.parent.mkdir(parents=True, exist_ok=True)
+            html_path.write_text(render_html(report), encoding="utf-8")
+            typer.secho(f"HTML report: {html_path}", fg=typer.colors.GREEN)
+    except OSError as exc:
+        typer.secho(
+            f"report error: {type(exc).__name__}: {exc}",
+            err=True,
+            fg=typer.colors.RED,
+        )
+        return False
+    return True
+
+
+def _write_latest_report(
+    path: Path,
+    html_path: Path | None,
+    json_path: Path | None,
+) -> bool:
+    """Render the latest persisted state without running extraction (#31)."""
+    try:
+        preparation = prepare_check(path)
+        config = preparation.config
+        with SessionLocal() as session:
+            workspace = session.scalar(
+                select(Workspace).where(
+                    Workspace.name == config.workspace.name
+                )
+            )
+            if workspace is None:
+                typer.secho(
+                    "note: no previous scan for this workspace; run "
+                    "'truthlayer scan <path>' before generating a drift report",
+                    fg=typer.colors.YELLOW,
+                )
+                return True
+            scan_run = session.scalar(
+                select(ScanRun)
+                .where(ScanRun.workspace_id == workspace.id)
+                .order_by(ScanRun.created_at.desc())
+            )
+            report = ReportBuilder(session).build(
+                workspace.id, config, scan_run=scan_run
+            )
+        return _write_report_files(report, html_path, json_path)
+    except TruthLayerError as exc:
+        typer.secho(f"error: {exc}", err=True, fg=typer.colors.RED)
+        return False
+    except SQLAlchemyError as exc:
+        typer.secho(
+            f"database error: {type(exc).__name__}: {exc}",
+            err=True,
+            fg=typer.colors.RED,
+        )
+        return False
+
+
 def _run_scan(
     path: Path,
 ) -> tuple[
-    IngestionResult, ExtractionResult | None, DetectionResult | None
+    IngestionResult,
+    ExtractionResult | None,
+    DetectionResult | None,
+    ReportDTO | None,
 ] | None:
-    """Ingest, extract and detect within one transaction/workspace."""
+    """Ingest, extract, detect and assemble the report in one transaction."""
     try:
         preparation = prepare_check(path)
         config = preparation.config
@@ -274,8 +380,15 @@ def _run_scan(
             detection = DriftDetectionService(session, config).run(
                 extraction.workspace_id, scan_run
             )
+            # DTO is assembled pre-commit; files are written afterwards.
+            report = ReportBuilder(session).build(
+                extraction.workspace_id,
+                config,
+                scan_run=scan_run,
+                detection=detection,
+            )
             session.commit()
-        return ingestion, extraction, detection
+        return ingestion, extraction, detection, report
     except TruthLayerError as exc:
         typer.secho(f"error: {exc}", err=True, fg=typer.colors.RED)
         return None
@@ -291,51 +404,290 @@ def _run_scan(
 @app.command()
 def scan(
     path: Path = typer.Argument(..., help="Workspace directory or config file."),
+    html: Path | None = typer.Option(
+        None, "--html", help="Write a self-contained HTML report to this path."
+    ),
+    output: Path | None = typer.Option(
+        None, "--output", help="Write a deterministic JSON report to this path."
+    ),
     verbose: bool = typer.Option(False, "--verbose"),
 ) -> None:
-    """Ingest, extract facts/evidence and write an immutable snapshot."""
+    """Ingest, extract facts/evidence, detect drift and write a snapshot."""
     _configure_logging(verbose)
     outcome = _run_scan(path)
     if outcome is None:
         raise typer.Exit(code=2)
 
-    ingestion, extraction, detection = outcome
+    ingestion, extraction, detection, report = outcome
     _print_ingestion_summary(ingestion)
     if extraction is not None:
         _print_extraction_summary(extraction)
     if detection is not None:
         _print_detection_summary(detection)
-    raise typer.Exit(code=2 if ingestion.failed else 0)
+    if report is not None:
+        _print_ci_banner(report)
+        report_ok = _write_report_files(report, html, output)
+    else:
+        report_ok = True
+
+    if ingestion.failed or not report_ok:
+        raise typer.Exit(code=2)
+    if report is not None and report.summary.ci.triggered:
+        raise typer.Exit(code=1)
+    raise typer.Exit(code=0)
+
+
+# --- drift management --------------------------------------------------------
+
+_STATUS_CHOICES = [s.value for s in DriftStatus] + ["all"]
+_TYPE_CHOICES = [t.value for t in DriftType]
 
 
 @drift_app.command("list")
-def drift_list() -> None:
-    """List drifts (Sprint 5)."""
-    typer.echo("drift list is not implemented yet (Sprint 5)")
+def drift_list(
+    status_filter: str = typer.Option(
+        DriftStatus.OPEN.value,
+        "--status",
+        help=f"One of: {', '.join(_STATUS_CHOICES)}.",
+    ),
+    drift_type: str | None = typer.Option(
+        None, "--type", help=f"One of: {', '.join(_TYPE_CHOICES)}."
+    ),
+    workspace: str | None = typer.Option(
+        None, "--workspace", help="Filter by workspace name."
+    ),
+) -> None:
+    """List drift findings (open by default)."""
+    if status_filter not in _STATUS_CHOICES:
+        typer.secho(
+            f"error: --status must be one of: {', '.join(_STATUS_CHOICES)}",
+            err=True,
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=2)
+    if drift_type is not None and drift_type not in _TYPE_CHOICES:
+        typer.secho(
+            f"error: --type must be one of: {', '.join(_TYPE_CHOICES)}",
+            err=True,
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=2)
+
+    with SessionLocal() as session:
+        try:
+            records = ResolutionService(session).list_drifts(
+                workspace_name=workspace,
+                status=status_filter,
+                drift_type=drift_type,
+            )
+        except SQLAlchemyError as exc:
+            typer.secho(
+                f"database error: {type(exc).__name__}: {exc}",
+                err=True,
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(code=2) from exc
+
+    if not records:
+        typer.echo("no drifts found.")
+        raise typer.Exit(code=0)
+
+    for record in records:
+        d = record.drift
+        detail = dict(d.detail_jsonb or {})
+        subject = record.subject_name or detail.get("subject")
+        if subject:
+            detail.setdefault("subject", subject)
+        color = _SEVERITY_COLOR.get(d.severity, typer.colors.MAGENTA)
+        typer.secho(
+            f"{str(d.id)[:8]}  [{d.severity:<8}] {d.type:<16} "
+            f"{record.workspace_name}",
+            fg=color,
+        )
+        typer.echo(f"          {short_title(d.type, detail)}")
+
+
+def _print_issue(issue: IssueReport) -> None:
+    color = _SEVERITY_COLOR.get(issue.severity, typer.colors.MAGENTA)
+    typer.secho(
+        f"[{issue.severity}] {issue.drift_type} — {issue.title}",
+        fg=color,
+    )
+    typer.echo(f"  drift id   : {issue.id}")
+    typer.echo(f"  status     : {issue.status}")
+    typer.echo(
+        f"  detector   : {issue.detector_type} · "
+        f"confidence {issue.confidence} · AI impact {issue.ai_impact_level}"
+    )
+    typer.echo(f"  detected at: {issue.detected_at:%Y-%m-%d %H:%M UTC}")
+
+    for label, fact in (("OLD", issue.old_fact), ("NEW", issue.new_fact)):
+        if fact is None:
+            continue
+        typer.secho(f"  -- {label} fact --", fg=typer.colors.CYAN)
+        typer.echo(
+            f"    {fact.subject} / {fact.predicate} = {fact.object_display}"
+            f"  ({fact.object_type}, {fact.status})"
+        )
+        typer.echo(
+            f"    valid {fact.valid_from or '?'} ~ {fact.valid_to or 'now'} · "
+            f"observed {fact.observed_at:%Y-%m-%d}"
+            if fact.observed_at
+            else f"    valid {fact.valid_from or '?'} ~ {fact.valid_to or 'now'}"
+        )
+
+    for label, source in (
+        ("OLD", issue.old_source),
+        ("NEW", issue.new_source),
+    ):
+        if source is None:
+            continue
+        typer.echo(
+            f"  {label.lower()} source  : {source.filename} "
+            f"({source.source_type}, authority {source.authority_score}"
+            + (f", version {source.version_label}" if source.version_label else "")
+            + ")"
+        )
+
+    if issue.evidence:
+        typer.echo("  evidence:")
+        for ev in issue.evidence:
+            page = f", p.{ev.page}" if ev.page else ""
+            typer.echo(f"    “{ev.quote}”")
+            typer.secho(
+                f"      — {ev.filename or 'unknown'}{page} ({ev.source_type})",
+                fg=typer.colors.BRIGHT_BLACK,
+            )
+
+    typer.secho(f"  why        : {issue.why}", fg=typer.colors.YELLOW)
+    typer.secho(
+        f"  action     : {issue.recommendation}", fg=typer.colors.BLUE
+    )
+    typer.echo(
+        "  commands   : truthlayer resolve "
+        f"{issue.id} --decision <{'|'.join(issue.suggested_decisions) or 'decision'}> "
+        "[--reason-code ... --reason ...]"
+    )
+    typer.echo(f"               truthlayer drift ignore {issue.id}")
+
+    if issue.resolution is not None:
+        r = issue.resolution
+        typer.secho(
+            f"  resolved   : {r.decision} by {r.resolved_by} at "
+            f"{r.resolved_at:%Y-%m-%d %H:%M}"
+            + (f" ({r.reason_code})" if r.reason_code else ""),
+            fg=typer.colors.GREEN,
+        )
+        if r.reason:
+            typer.echo(f"               reason: {r.reason}")
 
 
 @drift_app.command("show")
-def drift_show(drift_id: str = typer.Argument(...)) -> None:
-    """Show one drift (Sprint 5)."""
-    typer.echo(f"drift show {drift_id} is not implemented yet (Sprint 5)")
+def drift_show(
+    drift_id: uuid.UUID = typer.Argument(..., help="Drift UUID."),
+) -> None:
+    """Show one drift with old/new facts, evidence and recommended actions."""
+    with SessionLocal() as session:
+        try:
+            drift = ResolutionService(session).get_drift(drift_id)
+            issue = ReportBuilder(session).build_issue(drift)
+        except TruthLayerError as exc:
+            typer.secho(f"error: {exc}", err=True, fg=typer.colors.RED)
+            raise typer.Exit(code=2) from exc
+        except SQLAlchemyError as exc:
+            typer.secho(
+                f"database error: {type(exc).__name__}: {exc}",
+                err=True,
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(code=2) from exc
+    _print_issue(issue)
 
 
 @drift_app.command("ignore")
-def drift_ignore(drift_id: str = typer.Argument(...)) -> None:
-    """Ignore one drift (Sprint 5)."""
-    typer.echo(f"drift ignore {drift_id} is not implemented yet (Sprint 5)")
+def drift_ignore(
+    drift_id: uuid.UUID = typer.Argument(...),
+    reason: str | None = typer.Option(None, "--reason", help="Free-text note."),
+) -> None:
+    """Ignore one open drift (remembered; it will not re-fire)."""
+    with SessionLocal() as session:
+        try:
+            drift = ResolutionService(session).ignore(drift_id, reason=reason)
+            new_status = drift.status
+            session.commit()
+        except TruthLayerError as exc:
+            typer.secho(f"error: {exc}", err=True, fg=typer.colors.RED)
+            raise typer.Exit(code=2) from exc
+        except SQLAlchemyError as exc:
+            typer.secho(
+                f"database error: {type(exc).__name__}: {exc}",
+                err=True,
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(code=2) from exc
+    typer.secho(
+        f"drift {drift_id} is now {new_status}.", fg=typer.colors.GREEN
+    )
 
 
 @app.command()
 def resolve(
-    drift_id: str = typer.Argument(...),
+    drift_id: uuid.UUID = typer.Argument(..., help="Drift UUID."),
     decision: str = typer.Option(
-        ..., "--decision", help="accept_newer|keep_old|manual_override|false_positive"
+        ...,
+        "--decision",
+        help=(
+            "accept_newer|keep_old|manual_override|false_positive"
+        ),
+    ),
+    reason_code: str | None = typer.Option(
+        None,
+        "--reason-code",
+        help="Controlled code, e.g. newer_version, still_valid, multi_valued.",
+    ),
+    reason: str | None = typer.Option(
+        None, "--reason", help="Free-text explanation recorded for analysis."
+    ),
+    authority_fact_id: uuid.UUID | None = typer.Option(
+        None,
+        "--authority-fact-id",
+        help="Override the winning fact (defaults: newer for accept_newer).",
+    ),
+    resolved_by: str = typer.Option(
+        ...,
+        "--by",
+        default_factory=getpass.getuser,
+        help="Operator identity (defaults to the OS user).",
     ),
 ) -> None:
-    """Resolve a drift (Sprint 5)."""
-    typer.echo(
-        f"resolve {drift_id} as {decision} is not implemented yet (Sprint 5)"
+    """Record a human decision on one open drift (#27)."""
+    with SessionLocal() as session:
+        try:
+            record = ResolutionService(session).resolve(
+                drift_id,
+                decision=decision,
+                resolved_by=resolved_by,
+                reason=reason,
+                reason_code=reason_code,
+                authority_fact_id=authority_fact_id,
+            )
+            decided_by = record.resolved_by
+            decision_value = record.decision
+            session.commit()
+        except TruthLayerError as exc:
+            typer.secho(f"error: {exc}", err=True, fg=typer.colors.RED)
+            raise typer.Exit(code=2) from exc
+        except SQLAlchemyError as exc:
+            typer.secho(
+                f"database error: {type(exc).__name__}: {exc}",
+                err=True,
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(code=2) from exc
+    typer.secho(
+        f"drift {drift_id} resolved as {decision_value} by "
+        f"{decided_by} (scope=single).",
+        fg=typer.colors.GREEN,
     )
 
 
