@@ -1,0 +1,228 @@
+# DuplicateDetector golden cases (#21, #12).
+# 向量/名字相似度只负责"召回"候选实体对；判重只由确定性结构比较裁决：
+# 不同主体 + 同一属性 + 同一规范对象 + 有效期重叠 => 两个实体从未合并。
+# 被三个及以上实体共同持有的泛化事实（如通用计量单位）不具识别力。
+cases:
+  # ---- Positive：确为未合并的同一实体 -----------------------------------
+  - id: duplicate_exact_name_two_shared_facts
+    title: 完全同名且共享两条事实，确为重复实体（每个共享属性各一条）
+    category: positive
+    documents:
+      - {id: d1, filename: 客户名录.md, source_type: crm}
+    entities:
+      - {id: a, name: "ACME 客服中心", type: org}
+      - {id: b, name: "ACME 客服中心", type: org}
+    facts:
+      - {id: f1, subject: a, predicate: seat_count, value: 50, value_type: number, source: d1}
+      - {id: f2, subject: b, predicate: seat_count, value: 50, value_type: number, source: d1}
+      - {id: f3, subject: a, predicate: hotline, value: "400-820-0000", value_type: string, source: d1}
+      - {id: f4, subject: b, predicate: hotline, value: "400-820-0000", value_type: string, source: d1}
+    expected_drifts:
+      - {type: duplicate, predicate: seat_count, severity: warning}
+      - {type: duplicate, predicate: hotline, severity: warning}
+
+  - id: duplicate_containment_name_one_identifying_fact
+    title: 名字为包含关系且共享一条独有事实，判为重复
+    category: positive
+    documents:
+      - {id: d1, filename: 产品台账.md, source_type: crm}
+    entities:
+      - {id: a, name: "ACME CRM", type: product}
+      - {id: b, name: "ACME CRM Pro", type: product}
+    facts:
+      - {id: f1, subject: a, predicate: vendor_code, value: "ACME-CRM-01", value_type: string, source: d1}
+      - {id: f2, subject: b, predicate: vendor_code, value: "ACME-CRM-01", value_type: string, source: d1}
+    expected_drifts:
+      - {type: duplicate, predicate: vendor_code, severity: warning}
+
+  - id: duplicate_token_overlap_name
+    title: 名字 token 重合度达阈值（同城同产品不同后缀）且共享独有事实
+    category: positive
+    documents:
+      - {id: d1, filename: 服务点台账.md, source_type: crm}
+    entities:
+      - {id: a, name: "BJ ACME Cloud Helpdesk", type: org}
+      - {id: b, name: "SH ACME Cloud Helpdesk", type: org}
+    facts:
+      - {id: f1, subject: a, predicate: response_sla, value: "4h", value_type: string, source: d1}
+      - {id: f2, subject: b, predicate: response_sla, value: "4h", value_type: string, source: d1}
+    expected_drifts:
+      - {type: duplicate, predicate: response_sla, severity: warning}
+
+  - id: duplicate_embedding_recall_confirmed_structurally
+    title: 名字不像但高维向量高相似被召回，且结构上共享独有事实才判重
+    category: positive
+    documents:
+      - {id: d1, filename: 全球分部.md, source_type: crm}
+    entities:
+      - {id: a, name: "OmegaCorp", type: org, embedding: [1.0, 0.0, 0.0, 0.0]}
+      - {id: b, name: "NovaLine", type: org, embedding: [1.0, 0.0, 0.0, 0.0]}
+    facts:
+      - {id: f1, subject: a, predicate: hq_city, value: "Berlin", value_type: string, source: d1}
+      - {id: f2, subject: b, predicate: hq_city, value: "Berlin", value_type: string, source: d1}
+    expected_drifts:
+      - {type: duplicate, predicate: hq_city, severity: warning}
+
+  - id: duplicate_exact_name_single_identifying
+    title: 完全同名且共享一条独有事实（仅两个持有者）即可判重
+    category: positive
+    documents:
+      - {id: d1, filename: 客户名录.md, source_type: crm}
+    entities:
+      - {id: a, name: "栈上月明客服中心", type: org}
+      - {id: b, name: "栈上月明客服中心", type: org}
+    facts:
+      - {id: f1, subject: a, predicate: support_email, value: "help@x.com", value_type: string, source: d1}
+      - {id: f2, subject: b, predicate: support_email, value: "help@x.com", value_type: string, source: d1}
+    expected_drifts:
+      - {type: duplicate, predicate: support_email, severity: warning}
+
+  - id: duplicate_shared_entity_reference
+    title: 同一属性指向同一个对象实体（实体引用比较）
+    category: positive
+    documents:
+      - {id: d1, filename: 客户关系.md, source_type: crm}
+    entities:
+      - {id: a, name: "Acme Client Alpha", type: org}
+      - {id: b, name: "Acme Client Alpha Team", type: org}
+      - {id: m, name: "客户经理王武", type: person}
+    facts:
+      - {id: f1, subject: a, predicate: managed_by, value_type: entity, object_entity: m, source: d1}
+      - {id: f2, subject: b, predicate: managed_by, value_type: entity, object_entity: m, source: d1}
+    expected_drifts:
+      - {type: duplicate, predicate: managed_by, severity: warning}
+
+  # ---- Negative：不构成重复 ----------------------------------------------
+  - id: duplicate_neg_no_recall_despite_shared
+    title: 名字与向量都不召回，即便恰好共享一条事实也不判重
+    category: negative
+    documents:
+      - {id: d1, filename: 商家名录.md, source_type: crm}
+    entities:
+      - {id: a, name: "南山茶馆", type: org}
+      - {id: b, name: "北极光科技", type: org}
+    facts:
+      - {id: f1, subject: a, predicate: service_unit, value: "次", value_type: string, source: d1}
+      - {id: f2, subject: b, predicate: service_unit, value: "次", value_type: string, source: d1}
+    expected_drifts: []
+
+  - id: duplicate_neg_generic_fact_three_holders
+    title: 名字相似但唯一共享的是被三家共有的泛化属性，不判重
+    category: negative
+    documents:
+      - {id: d1, filename: 产品台账.md, source_type: crm}
+    entities:
+      - {id: a, name: "ACME CRM", type: product}
+      - {id: b, name: "ACME CRM Pro", type: product}
+      - {id: c, name: "Unrelated Widget", type: product}
+    facts:
+      - {id: f1, subject: a, predicate: billing_unit, value: "座席/月", value_type: string, source: d1}
+      - {id: f2, subject: b, predicate: billing_unit, value: "座席/月", value_type: string, source: d1}
+      - {id: f3, subject: c, predicate: billing_unit, value: "座席/月", value_type: string, source: d1}
+    expected_drifts: []
+
+  - id: duplicate_neg_same_entity_multi_evidence
+    title: 同一实体的多条等价证据是 Canonical Fact，不是两个实体
+    category: negative
+    documents:
+      - {id: da, filename: 官网资料.md, source_type: crm}
+      - {id: db, filename: 展会名片.md, source_type: crm}
+    entities:
+      - {id: a, name: "独立有限公司", type: org}
+    facts:
+      - {id: f1, subject: a, predicate: hotline, value: "029-8888", value_type: string, source: da}
+      - {id: f2, subject: a, predicate: hotline, value: "029-8888", value_type: string, source: db}
+    expected_drifts: []
+
+  - id: duplicate_neg_shared_but_windows_disjoint
+    title: 名字相似且同值，但有效期互不重叠（未来先后），不判重
+    category: negative
+    documents:
+      - {id: d1, filename: 合同主体沿革.md, source_type: crm}
+    entities:
+      - {id: a, name: "ACME CRM", type: product}
+      - {id: b, name: "ACME CRM Pro", type: product}
+    facts:
+      - {id: f1, subject: a, predicate: vendor_code, value: "ACME-CRM-01", value_type: string, source: d1, valid_from: 2026-07-01, valid_to: 2026-09-30}
+      - {id: f2, subject: b, predicate: vendor_code, value: "ACME-CRM-01", value_type: string, source: d1, valid_from: 2026-10-01}
+    expected_drifts: []
+
+  - id: duplicate_neg_same_name_different_object
+    title: 同名实体但同一属性取值不同，不能据此判重
+    category: negative
+    documents:
+      - {id: d1, filename: 门店名录.md, source_type: crm}
+    entities:
+      - {id: a, name: "快乐便利店", type: org}
+      - {id: b, name: "快乐便利店", type: org}
+    facts:
+      - {id: f1, subject: a, predicate: store_area_sqm, value: 80, value_type: number, source: d1}
+      - {id: f2, subject: b, predicate: store_area_sqm, value: 220, value_type: number, source: d1}
+    expected_drifts: []
+
+  - id: duplicate_neg_similar_name_different_predicate
+    title: 名字相似但陈述的属性完全不同，无共享事实
+    category: negative
+    documents:
+      - {id: d1, filename: 产品台账.md, source_type: crm}
+    entities:
+      - {id: a, name: "ACME CRM", type: product}
+      - {id: b, name: "ACME CRM Pro", type: product}
+    facts:
+      - {id: f1, subject: a, predicate: list_price, value: 100, value_type: number, source: d1}
+      - {id: f2, subject: b, predicate: brand_color, value: "blue", value_type: string, source: d1}
+    expected_drifts: []
+
+  # ---- Ambiguous Negative：疑似重复，实则不是 ----------------------------
+  - id: duplicate_amb_similar_name_zero_shared
+    title: 名字高度相似但没有任何同属性同值事实，仅为命名巧合
+    category: ambiguous_negative
+    documents:
+      - {id: d1, filename: 产品台账.md, source_type: crm}
+    entities:
+      - {id: a, name: "ACME CRM", type: product}
+      - {id: b, name: "ACME CRM Pro", type: product}
+    facts:
+      - {id: f1, subject: a, predicate: list_price, value: 100, value_type: number, source: d1}
+      - {id: f2, subject: b, predicate: warranty_years, value: 2, value_type: number, source: d1}
+    expected_drifts: []
+
+  - id: duplicate_amb_embedding_high_but_disjoint
+    title: 向量高度相似但事实有效期不重叠，可能是先后两个主体
+    category: ambiguous_negative
+    documents:
+      - {id: d1, filename: 全球分部.md, source_type: crm}
+    entities:
+      - {id: a, name: "OmegaCorp", type: org, embedding: [1.0, 0.0, 0.0, 0.0]}
+      - {id: b, name: "NovaLine", type: org, embedding: [1.0, 0.0, 0.0, 0.0]}
+    facts:
+      - {id: f1, subject: a, predicate: hq_city, value: "Berlin", value_type: string, source: d1, valid_from: 2026-07-01, valid_to: 2026-09-30}
+      - {id: f2, subject: b, predicate: hq_city, value: "Berlin", value_type: string, source: d1, valid_from: 2026-10-01}
+    expected_drifts: []
+
+  - id: duplicate_amb_short_abbreviation_below_min_chars
+    title: 短缩写的包含关系字符过短（<4），不足以作为召回证据
+    category: ambiguous_negative
+    documents:
+      - {id: d1, filename: 客户简称表.md, source_type: crm}
+    entities:
+      - {id: a, name: "XZ", type: org}
+      - {id: b, name: "XZ Pro", type: org}
+    facts:
+      - {id: f1, subject: a, predicate: service_unit, value: "项", value_type: string, source: d1}
+      - {id: f2, subject: b, predicate: service_unit, value: "项", value_type: string, source: d1}
+    expected_drifts: []
+
+  - id: duplicate_amb_entity_ref_vs_scalar_text
+    title: 一边是对象实体引用、另一边是同名字面文本，规范对象不同不判重
+    category: ambiguous_negative
+    documents:
+      - {id: d1, filename: 客户关系.md, source_type: crm}
+    entities:
+      - {id: a, name: "ACME CRM", type: org}
+      - {id: b, name: "ACME CRM Pro", type: org}
+      - {id: m, name: "王武", type: person}
+    facts:
+      - {id: f1, subject: a, predicate: managed_by, value_type: entity, object_entity: m, source: d1}
+      - {id: f2, subject: b, predicate: managed_by, value: "王武", value_type: string, source: d1}
+    expected_drifts: []

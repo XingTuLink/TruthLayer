@@ -40,6 +40,7 @@ TruthLayer 是一个 CLI-first 的本地/CI 工具：一次扫描把企业文档
 | `truthlayer.detection` | 知识状态加载、候选/指纹、四个检测器、检测编排服务 | 检测器不接触 session/ORM |
 | `truthlayer.resolution` | 漂移查询、人工处置（四决策/原因码/权威事实）、忽略 | service 只 flush，决策不可变更（one-shot） |
 | `truthlayer.reporting` | Report DTO、报告组装、CI 阈值策略、中文叙述、确定性 JSON、Jinja2 HTML | DTO 是 CLI/JSON/HTML 的唯一事实来源 |
+| `truthlayer.evaluation` | Golden QA schema、内存态构造、期望匹配、P/R/F1/FPR 指标与 Phase 0 Gate | 旁路质量层：只依赖检测器与纯 dataclass，不碰数据库/LLM/ORM |
 | `truthlayer.providers` | OpenAI 兼容的 LLM/Embedder 实现（云端、网关、Ollama 通用） | 协议化，可替换 |
 | `truthlayer.cli` | Typer 命令、事务提交、终端输出 | 薄壳，禁止写业务规则 |
 
@@ -164,6 +165,36 @@ ReportBuilder（查库组装 DTO，唯一接触 ORM 的报告组件）
 - `check` 只渲染最近一次 scan 持久化的状态（不调用 LLM，不花 token），
   scan 则在事务提交后写文件（保证报告反映的是已落库状态）。
 
+### 4.6 评测（evaluation）
+
+评测是**旁路质量层**，回答"检测器裁决得准不准"，而不是再跑一遍扫描：
+
+```text
+examples/qa_cases/*.yaml
+   └─▶ QACase（文档/实体/事实 + 规则阈值 + 期望漂移，三类标签）
+          └─▶ build_world   直接构造 KnowledgeState / DetectionContext
+                 │            （id 由 case id + 局部 id 经 uuid5 派生，确定可重放）
+                 └─▶ default_detectors().detect(...)   ← 复用真实检测器
+                        └─▶ match_findings   期望 ↔ 候选（类型必需，其余定位器收窄）
+                               └─▶ compute_metrics  P / R / F1 / FPR + Gate
+```
+
+- **零外部依赖**：检测器入口本就是 frozen dataclass `KnowledgeState`，因此用例
+  无需数据库、无需 LLM，毫秒级完成；这恰好评测的是建议书 #22/#23 划定的
+  "确定性裁决核心"（LLM 只提候选、向量只召回），任何人 clone 即可复跑；
+- **三类用例**：positive 必须声明 ≥1 条期望漂移，negative / ambiguous_negative
+  必须零期望——该不变量在 schema 层强制，防止写错用例"刷指标"；
+- **指标口径**：finding 级 Precision / Recall / F1 以每条期望漂移为标注正例
+  （TP/FP/FN）；FPR 在**用例级**良性场景（正常 + 疑似冲突）上统计
+  "被误报的良性用例 / 良性用例总数"，两种口径分别透明报告，不混用；
+- **Gate 严格不等号**：P>80% / R>70% / F1>75% / FPR<30%，另要求正例与良性用例
+  均非空，防止空集作弊；同时输出每个检测器的独立 P/R 与误报分类；
+- **真实世界 HCR**（人工确认率）属线上持续度量，不纳入离线 Gate，二者边界在
+  README 中明确，不用离线高分暗示线上表现。
+
+`truthlayer eval` 是薄壳：加载用例 → 跑 harness → 算指标 → 终端/JSON/Markdown，
+退出码 `0` Gate 通过 / `1` 未达标 / `2` 用例加载或产物写入失败。
+
 ## 5. 配置与凭据
 
 - `.truthlayer.yaml` 全部字段由 Pydantic 强校验（`extra="forbid"`，未知键即报错），
@@ -192,7 +223,10 @@ CLI 退出码（稳定契约）：`0` 成功；`1` fail_on 门禁失败（存在
   覆盖五类型漂移的检出、字段与跨扫描去重、Resolution 全生命周期（含重复处置防护、
   权威事实规则）、报告组装以及 drift/resolve CLI 命令；
 - **Ollama 冒烟测试**：默认 skip，`TRUTHLAYER_RUN_OLLAMA=1` 时对真实模型端到端验证，
-  CI 无 Ollama 不受影响。
+  CI 无 Ollama 不受影响；
+- **Golden QA 回归**（`tests/unit/evaluation/`）：加载 `examples/qa_cases` 全量用例，
+  在纯内存态跑真实检测器，断言用例数量区间（50–100）、三类齐全、五类型均有正例，
+  且整体持续满足 Phase 0 Gate。无数据库/LLM，随普通单元测试一起强制执行。
 
 ## 8. 关键设计决策（贡献者必读）
 
@@ -203,4 +237,6 @@ CLI 退出码（稳定契约）：`0` 成功；`1` fail_on 门禁失败（存在
 5. **显式优于猜测**：版本链只认配置声明，歧义默认拒绝并告警；
 6. **CLI 是薄壳**：业务逻辑只允许出现在 domain/service 层；
 7. **处置即审计**：决策 one-shot 不可改，原因码受控、自由说明留痕，处置不删除证据；
-8. **单一报告模型**：终端/JSON/HTML 必须渲染同一个 DTO，渲染层不做判定、不查库。
+8. **单一报告模型**：终端/JSON/HTML 必须渲染同一个 DTO，渲染层不做判定、不查库；
+9. **先写用例再改规则**：调整检测器前先补业务语义的正/负/模糊 QA 用例；离线 Gate
+   只度量确定性裁决层，线上 HCR 单独采集，两者不互相替代或美化。

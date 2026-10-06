@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-green)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-193%20passed-success)](#testing)
+[![Tests](https://img.shields.io/badge/tests-213%20passed-success)](#testing)
 
 Policies, price lists and product manuals keep being revised, but AI assistants
 often quote outdated versions: conflicting figures across documents, policies
@@ -190,6 +190,7 @@ embedding:
 | `truthlayer drift show <id>` | Full detail: old/new facts, verbatim evidence, AI impact, recommended action |
 | `truthlayer drift ignore <id> [--reason …]` | Ignore (remembered by fingerprint; never re-reported) |
 | `truthlayer resolve <id> --decision …` | Record a human decision — see below |
+| `truthlayer eval [--cases …]` | Run the golden QA set and compute the Phase 0 Gate metrics (no DB, no LLM) |
 | `truthlayer --version` | Version info |
 
 Reports and the CI gate:
@@ -225,6 +226,49 @@ Stable exit-code semantics:
 - `1` **open** drifts meet or exceed the `ci.fail_on` threshold (ignored/resolved never block);
 - `2` system errors (invalid config, database unavailable, files failed to parse).
 
+## Evaluation & the Phase 0 Gate
+
+TruthLayer measures the **adjudication quality of its deterministic core** with a
+golden QA set. Each case is a self-contained scenario (documents / entities / facts
++ rule thresholds + expected drifts); at evaluation time it is mapped straight into
+an in-memory knowledge state and fed to the **real detectors** — no database, no LLM,
+millisecond-fast and fully deterministic, so anyone can re-run it after cloning and it
+is enforced as a regression test on every run:
+
+```powershell
+# Print metrics to the terminal; optionally emit deterministic JSON and Markdown
+.\.venv\Scripts\truthlayer eval --cases .\examples\qa_cases `
+  --output eval.json --markdown eval.md
+```
+
+Cases fall into three categories: **Positive** (real drift, must be flagged),
+**Negative** (healthy knowledge, must never be flagged) and **Ambiguous Negative**
+(looks like a conflict but differs in time / scope / applicable subject).
+
+Phase 0 Gate thresholds (strict inequalities):
+
+| Metric | Meaning | Threshold |
+|---|---|---|
+| Precision | Share of reported findings that are real drift | > 80% |
+| Recall | Share of real drift that is detected | > 70% |
+| F1 | Harmonic mean of Precision and Recall | > 75% |
+| FPR | Share of benign (normal / ambiguous) scenarios falsely alarmed | < 30% |
+
+The bundled set lives in [examples/qa_cases](./examples/qa_cases) (54 cases:
+25 positive / 17 negative / 12 ambiguous-negative, covering all five drift types).
+On the deterministic detection core it achieves **Precision / Recall / F1 = 100% and
+FPR = 0% — Gate passed**, with per-detector P/R and a false-positive breakdown.
+
+Note the boundary: this Gate covers the **deterministic adjudication layer** (the LLM
+only proposes candidates and embeddings only recall; every verdict is traceable).
+End-to-end extraction quality is covered by the Ollama smoke test; the real-world
+**HCR (Human Confirmation Rate)** is collected continuously in production and is not
+mixed with these offline metrics. When changing detector rules, add business-semantics
+positive / negative / ambiguous cases first, then adjust the rules.
+
+`eval` exit codes: `0` Gate passed, `1` Gate failed, `2` cases could not be loaded or
+an artifact could not be written.
+
 ## Testing
 
 ```powershell
@@ -238,15 +282,17 @@ $env:TRUTHLAYER_DATABASE_URL="postgresql+psycopg://..."
 .\.venv\Scripts\python -m pytest
 ```
 
-The suite currently contains **193 passing tests**: unit tests cover
+The suite currently contains **213 passing tests**: unit tests cover
 normalization/hashing/entity resolution/evidence validation, every decision
 branch and negative case of the four detectors, the CI threshold matrix and
-deterministic serialization / HTML escaping of the report DTO; integration tests
-verify the detection, persisted fields and cross-scan fingerprint dedup of all
-five drift types, the full Resolution lifecycle (resolve/ignore/double-resolve
-guards), report assembly and the drift/resolve CLI commands on real PostgreSQL.
-One additional Ollama end-to-end smoke test is skipped by default
-(set `TRUTHLAYER_RUN_OLLAMA=1` to run it).
+deterministic serialization / HTML escaping of the report DTO, evaluation
+matching / metrics / Gate threshold boundaries, and the **dependency-free golden
+QA regression** (54 cases across all three categories that must keep passing the
+Gate); integration tests verify the detection, persisted fields and cross-scan
+fingerprint dedup of all five drift types, the full Resolution lifecycle
+(resolve/ignore/double-resolve guards), report assembly and the drift/resolve CLI
+commands on real PostgreSQL. One additional Ollama end-to-end smoke test is
+skipped by default (set `TRUTHLAYER_RUN_OLLAMA=1` to run it).
 
 ## Documentation
 
@@ -263,10 +309,13 @@ TruthLayer is currently in **Phase 0 (CLI edition)**, iterating in six sprints:
 - [x] Sprint 3: LLM knowledge extraction, Evidence First, embeddings, immutable snapshots
 - [x] Sprint 4: drift engine (four detectors / five types, fingerprint dedup)
 - [x] Sprint 5: resolution workflow, `drift`/`resolve` CLI, CI fail_on, HTML/JSON reports
-- [ ] Sprint 6: evaluation corpus and metric acceptance (Precision / Recall / FPR)
+- [x] Sprint 6: golden QA set (54 cases / 3 categories), P/R/F1/FPR metrics with dependency-free regression, `truthlayer eval`
 
-**v0.1 will be formally released after the Phase 0 Gate is passed.** The current
-version is `0.0.1` (under active development).
+**The Phase 0 Gate for the deterministic core is passed** (golden set:
+Precision / Recall / F1 = 100%, FPR = 0%); the real-world Human Confirmation Rate
+(HCR) will be collected continuously in actual use. **The formal v0.1 release and
+tag will follow final Gate sign-off.** The current version is `0.0.1`
+(under active development).
 
 ## Contributing
 

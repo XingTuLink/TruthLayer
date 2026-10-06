@@ -24,6 +24,14 @@ from truthlayer.detection.service import (
 )
 from truthlayer.domain.enums import DriftStatus, DriftType
 from truthlayer.domain.errors import TruthLayerError
+from truthlayer.evaluation.harness import run_suite as run_qa_suite
+from truthlayer.evaluation.loader import EvaluationError, load_cases
+from truthlayer.evaluation.metrics import compute_metrics
+from truthlayer.evaluation.report import (
+    render_json as render_eval_json,
+    render_markdown as render_eval_markdown,
+    render_text as render_eval_text,
+)
 from truthlayer.extraction.service import ExtractionResult
 from truthlayer.ingestion.service import IngestionResult
 from truthlayer.providers.factory import build_embedder, build_llm
@@ -163,6 +171,64 @@ def check(
 
     # Parser failures are runtime errors (#26, #34).
     raise typer.Exit(code=2 if result.failed or not report_ok else 0)
+
+
+def _write_eval_artifact(path: Path, content: str) -> bool:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        return True
+    except OSError as exc:
+        typer.secho(
+            f"failed to write {path}: {exc}", err=True, fg=typer.colors.RED
+        )
+        return False
+
+
+@app.command(name="eval")
+def evaluate(
+    cases: Path = typer.Option(
+        Path("examples/qa_cases"),
+        "--cases",
+        help="Directory of golden QA case YAML files.",
+    ),
+    output: Path | None = typer.Option(
+        None, "--output", help="Write metrics as deterministic JSON."
+    ),
+    markdown: Path | None = typer.Option(
+        None, "--markdown", help="Write a Markdown evaluation report."
+    ),
+    verbose: bool = typer.Option(False, "--verbose", help="Verbose logging."),
+) -> None:
+    """Run the golden QA set against the deterministic detectors (#40, #42).
+
+    No database and no LLM are involved: each case is mapped straight onto a
+    KnowledgeState. Exit code 0 = Phase 0 Gate passed, 1 = Gate failed,
+    2 = cases could not be loaded / artifact could not be written.
+    """
+    _configure_logging(verbose)
+    try:
+        qa_cases = load_cases(cases)
+        suite = run_qa_suite(qa_cases)
+        metrics = compute_metrics(suite, qa_cases)
+    except EvaluationError as exc:
+        typer.secho(str(exc), err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=2)
+
+    typer.echo(render_eval_text(metrics, suite, qa_cases))
+
+    artifacts_ok = True
+    if output is not None:
+        artifacts_ok &= _write_eval_artifact(
+            output, render_eval_json(metrics, suite, qa_cases)
+        )
+    if markdown is not None:
+        artifacts_ok &= _write_eval_artifact(
+            markdown, render_eval_markdown(metrics, suite, qa_cases)
+        )
+    if not artifacts_ok:
+        raise typer.Exit(code=2)
+    raise typer.Exit(code=0 if metrics.gate.passed else 1)
 
 
 def _print_extraction_summary(result: ExtractionResult) -> None:

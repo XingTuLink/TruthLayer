@@ -1,0 +1,211 @@
+# ConflictDetector golden cases (#19).
+# 同一主体 + 同一属性 + 取值不同 + 有效期重叠 + 来自不同来源文档 => 冲突。
+cases:
+  # ---- Positive：确有冲突，必须报警 -------------------------------------
+  - id: conflict_cross_source_number
+    title: 两份来源对同一产品价格给出不同数值且有效期重叠
+    category: positive
+    documents:
+      - {id: da, filename: 价格表A.csv, source_type: pricing, authority: 0.9}
+      - {id: db, filename: 价格表B.csv, source_type: pricing, authority: 0.8}
+    entities:
+      - {id: p1, name: ACME 客服坐席, type: product}
+    facts:
+      - {id: f1, subject: p1, predicate: list_price, value: 100, value_type: number, source: da}
+      - {id: f2, subject: p1, predicate: list_price, value: 150, value_type: number, source: db}
+    expected_drifts:
+      - {type: conflict, subject: p1, predicate: list_price, severity: high}
+
+  - id: conflict_string_values
+    title: 两份制度对报销口径给出不同文本
+    category: positive
+    documents:
+      - {id: da, filename: 制度2024.md, source_type: policy}
+      - {id: db, filename: 制度2025.md, source_type: policy}
+    entities:
+      - {id: t1, name: 差旅报销, type: policy}
+    facts:
+      - {id: f1, subject: t1, predicate: reimbursement_rule, value: 需提前审批, value_type: string, source: da}
+      - {id: f2, subject: t1, predicate: reimbursement_rule, value: 事后凭票报销, value_type: string, source: db}
+    expected_drifts:
+      - {type: conflict, subject: t1, predicate: reimbursement_rule, severity: high}
+
+  - id: conflict_pricing_override_critical
+    title: 价格类来源冲突按配置升级为严重级
+    category: positive
+    rules:
+      severity: {pricing_change: critical}
+    documents:
+      - {id: da, filename: 价格表A.csv, source_type: pricing}
+      - {id: db, filename: 价格表B.csv, source_type: pricing}
+    entities:
+      - {id: p1, name: 企业版套餐, type: product}
+    facts:
+      - {id: f1, subject: p1, predicate: monthly_price, value: 299, value_type: number, source: da}
+      - {id: f2, subject: p1, predicate: monthly_price, value: 399, value_type: number, source: db}
+    expected_drifts:
+      - {type: conflict, subject: p1, predicate: monthly_price, severity: critical}
+
+  - id: conflict_overlapping_dated_windows
+    title: 明确标注的有效期重叠且取值不同（观测时间很新，非过期）
+    category: positive
+    documents:
+      - {id: da, filename: 政策A.md, source_type: policy}
+      - {id: db, filename: 政策B.md, source_type: policy}
+    entities:
+      - {id: b1, name: 年假政策, type: policy}
+    facts:
+      - id: f1
+        subject: b1
+        predicate: annual_leave_days
+        value: 5
+        value_type: number
+        source: da
+        valid_from: 2025-01-01
+        valid_to: 2026-12-31
+        observed_at: 2026-05-15
+      - id: f2
+        subject: b1
+        predicate: annual_leave_days
+        value: 10
+        value_type: number
+        source: db
+        valid_from: 2026-02-01
+        observed_at: 2026-05-16
+    expected_drifts:
+      - {type: conflict, subject: b1, predicate: annual_leave_days, severity: high}
+
+  - id: conflict_entity_objects
+    title: 同一关系属性指向两个不同对象实体
+    category: positive
+    documents:
+      - {id: da, filename: 组织架构A.md, source_type: org}
+      - {id: db, filename: 组织架构B.md, source_type: org}
+    entities:
+      - {id: team, name: 增长团队, type: team}
+      - {id: lead1, name: 张伟, type: person}
+      - {id: lead2, name: 李娜, type: person}
+    facts:
+      - {id: f1, subject: team, predicate: led_by, value_type: entity, object_entity: lead1, source: da}
+      - {id: f2, subject: team, predicate: led_by, value_type: entity, object_entity: lead2, source: db}
+    expected_drifts:
+      - {type: conflict, subject: team, predicate: led_by, severity: high}
+
+  - id: conflict_predicate_case_insensitive
+    title: 属性名仅大小写/下划线差异仍视为同一属性冲突
+    category: positive
+    documents:
+      - {id: da, filename: 表A.csv, source_type: pricing}
+      - {id: db, filename: 表B.csv, source_type: pricing}
+    entities:
+      - {id: p1, name: 旗舰版产品, type: product}
+    facts:
+      - {id: f1, subject: p1, predicate: List_Price, value: 88, value_type: number, source: da}
+      - {id: f2, subject: p1, predicate: list_price, value: 99, value_type: number, source: db}
+    expected_drifts:
+      - {type: conflict, subject: p1, predicate: list_price, severity: high}
+
+  # ---- Negative：正常知识，不应报警 -------------------------------------
+  - id: conflict_neg_same_document_tiers
+    title: 同一文档内的分档取值（套餐档位表）不是跨来源冲突
+    category: negative
+    documents:
+      - {id: da, filename: 价格表.csv, source_type: pricing}
+    entities:
+      - {id: p1, name: 云存储服务, type: product}
+    facts:
+      - {id: f1, subject: p1, predicate: quota_gb, value: 100, value_type: number, source: da}
+      - {id: f2, subject: p1, predicate: quota_gb, value: 500, value_type: number, source: da}
+    expected_drifts: []
+
+  - id: conflict_neg_identical_values_two_sources
+    title: 两份来源取值一致，是同一事实的多条证据
+    category: negative
+    documents:
+      - {id: da, filename: 制度A.md, source_type: policy}
+      - {id: db, filename: 制度B.md, source_type: policy}
+    entities:
+      - {id: b1, name: 病假政策, type: policy}
+    facts:
+      - {id: f1, subject: b1, predicate: sick_leave_days, value: 3, value_type: number, source: da}
+      - {id: f2, subject: b1, predicate: sick_leave_days, value: 3, value_type: number, source: db}
+    expected_drifts: []
+
+  - id: conflict_neg_future_sequential_validity
+    title: 两个未来才先后生效、互不重叠的取值，当前不冲突
+    category: negative
+    documents:
+      - {id: da, filename: 价格旧版.csv, source_type: pricing}
+      - {id: db, filename: 价格新版.csv, source_type: pricing}
+    entities:
+      - {id: p1, name: 排队机标准版, type: product}
+    facts:
+      - {id: f1, subject: p1, predicate: list_price, value: 100, value_type: number, source: da, valid_from: 2026-07-01, valid_to: 2026-09-30}
+      - {id: f2, subject: p1, predicate: list_price, value: 120, value_type: number, source: db, valid_from: 2026-10-01}
+    expected_drifts: []
+
+  - id: conflict_neg_different_predicate
+    title: 同一主体的不同属性互不构成冲突
+    category: negative
+    documents:
+      - {id: da, filename: 产品资料.md, source_type: general}
+      - {id: db, filename: 产品资料2.md, source_type: general}
+    entities:
+      - {id: p1, name: 门禁设备X1, type: product}
+    facts:
+      - {id: f1, subject: p1, predicate: list_price, value: 2000, value_type: number, source: da}
+      - {id: f2, subject: p1, predicate: warranty_years, value: 2, value_type: number, source: db}
+    expected_drifts: []
+
+  - id: conflict_neg_single_fact
+    title: 仅有一条事实无从冲突
+    category: negative
+    documents:
+      - {id: da, filename: 制度.md, source_type: policy}
+    entities:
+      - {id: b1, name: 加班政策, type: policy}
+    facts:
+      - {id: f1, subject: b1, predicate: overtime_rule, value: 调休优先, value_type: string, source: da}
+    expected_drifts: []
+
+  # ---- Ambiguous Negative：看似冲突，实则因规则/规范化不应报 -------------
+  - id: conflict_amb_multi_valued_configured
+    title: 配置声明为多值属性（分档权益），并存取值不冲突
+    category: ambiguous_negative
+    rules:
+      multi_valued_predicates: [benefit_tier]
+    documents:
+      - {id: da, filename: 会员权益.md, source_type: policy}
+      - {id: db, filename: 会员手册.md, source_type: policy}
+    entities:
+      - {id: m1, name: 金卡会员, type: tier}
+    facts:
+      - {id: f1, subject: m1, predicate: benefit_tier, value: 机场贵宾厅, value_type: string, source: da}
+      - {id: f2, subject: m1, predicate: benefit_tier, value: 免费升舱, value_type: string, source: db}
+    expected_drifts: []
+
+  - id: conflict_amb_same_value_whitespace
+    title: 取值仅首尾空白差异，规范化后相同
+    category: ambiguous_negative
+    documents:
+      - {id: da, filename: 制度A.md, source_type: policy}
+      - {id: db, filename: 制度B.md, source_type: policy}
+    entities:
+      - {id: b1, name: 考勤政策, type: policy}
+    facts:
+      - {id: f1, subject: b1, predicate: work_location, value: 西安, value_type: string, source: da}
+      - {id: f2, subject: b1, predicate: work_location, value: " 西安 ", value_type: string, source: db}
+    expected_drifts: []
+
+  - id: conflict_amb_int_float_same_number
+    title: 149 与 149.0 是同一数值
+    category: ambiguous_negative
+    documents:
+      - {id: da, filename: 表A.csv, source_type: pricing}
+      - {id: db, filename: 表B.csv, source_type: pricing}
+    entities:
+      - {id: p1, name: 热敏打印机P3, type: product}
+    facts:
+      - {id: f1, subject: p1, predicate: list_price, value: 149, value_type: number, source: da}
+      - {id: f2, subject: p1, predicate: list_price, value: 149.0, value_type: number, source: db}
+    expected_drifts: []

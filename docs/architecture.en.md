@@ -45,6 +45,7 @@ be reused directly by an API.
 | `truthlayer.detection` | Knowledge-state loading, candidates/fingerprints, four detectors, orchestration service | Detectors never touch a session or the ORM |
 | `truthlayer.resolution` | Drift queries, human resolution (four decisions / reason codes / authority fact), ignore | Services only flush; decisions are immutable (one-shot) |
 | `truthlayer.reporting` | Report DTO, assembly, CI threshold policy, Chinese narratives, deterministic JSON, Jinja2 HTML | The DTO is the single source of truth for CLI/JSON/HTML |
+| `truthlayer.evaluation` | Golden QA schema, in-memory world builder, expectation matching, P/R/F1/FPR metrics and the Phase 0 Gate | Side-car quality layer: depends only on detectors and plain dataclasses — no DB, LLM or ORM |
 | `truthlayer.providers` | OpenAI-compatible LLM/Embedder implementations (cloud, gateways, Ollama) | Protocol-based and replaceable |
 | `truthlayer.cli` | Typer commands, transaction commit, terminal output | Thin shell; no business rules allowed |
 
@@ -202,6 +203,45 @@ ReportBuilder (queries the DB and assembles the DTO — the only report
   token spend); `scan` writes report files after the transaction commits, so a
   report always reflects committed state.
 
+### 4.6 Evaluation
+
+Evaluation is a **side-car quality layer** that answers "how accurately do the
+detectors adjudicate?" — it does not re-run a scan:
+
+```text
+examples/qa_cases/*.yaml
+   └─▶ QACase (documents / entities / facts + rule thresholds + expected drifts)
+          └─▶ build_world   constructs KnowledgeState / DetectionContext directly
+                 │            (ids derived via uuid5 from case id + local id; reproducible)
+                 └─▶ default_detectors().detect(...)   ← the real detectors
+                        └─▶ match_findings   expectations ↔ candidates (type required,
+                               └─▶ compute_metrics     other fields narrow the match)
+                                                      P / R / F1 / FPR + Gate
+```
+
+- **No external dependencies**: detectors already consume the frozen
+  `KnowledgeState` dataclass, so a case needs no database and no LLM and runs in
+  milliseconds. This evaluates exactly the "deterministic adjudication core"
+  drawn by #22/#23 (LLMs only propose; embeddings only recall), and anyone can
+  re-run it after cloning;
+- **Three categories**: a positive case must declare ≥ 1 expected drift;
+  negative / ambiguous-negative cases must expect zero. The invariant is
+  enforced in the schema so a mistyped case can never game the numbers;
+- **Metric definitions**: finding-level Precision / Recall / F1 treat each
+  expected drift as a labelled positive (TP/FP/FN). FPR is measured at *case*
+  level over benign scenarios (negative + ambiguous): false-alarm cases / benign
+  cases. The two definitions are reported transparently and never conflated;
+- **Strict Gate inequalities**: P>80% / R>70% / F1>75% / FPR<30%, and both
+  positive and benign sets must be non-empty (no empty-set gaming). Per-detector
+  P/R and a false-positive breakdown are also emitted;
+- The real-world **HCR (Human Confirmation Rate)** is an in-production metric and
+  is deliberately kept out of the offline Gate; the README states the boundary so
+  a high offline score is never presented as proof of production performance.
+
+`truthlayer eval` is a thin shell: load cases → run the harness → compute metrics
+→ terminal/JSON/Markdown, with exit codes `0` Gate passed / `1` Gate failed /
+`2` cases could not load or an artifact could not be written.
+
 ## 5. Configuration and credentials
 
 - Every `.truthlayer.yaml` field is strongly validated by Pydantic
@@ -238,7 +278,12 @@ errors outrank the gate: `2 > 1 > 0`. Failed scans are also recorded in
   types, the full Resolution lifecycle (including double-resolve guards and
   authority-fact rules), report assembly and the drift/resolve CLI commands;
 - **Ollama smoke test**: skipped by default; with `TRUTHLAYER_RUN_OLLAMA=1`
-  it runs end-to-end against real models, so CI without Ollama is unaffected.
+  it runs end-to-end against real models, so CI without Ollama is unaffected;
+- **Golden QA regression** (`tests/unit/evaluation/`): loads every case under
+  `examples/qa_cases`, runs the real detectors on pure in-memory state, and
+  asserts the size range (50–100), all three categories, a positive for every
+  drift type, and that the suite keeps meeting the Phase 0 Gate. No database or
+  LLM — it runs with the ordinary unit tests.
 
 ## 8. Key design decisions (required reading for contributors)
 
@@ -258,4 +303,8 @@ errors outrank the gate: `2 > 1 > 0`. Failed scans are also recorded in
    are controlled, free-text reasons are retained, and resolution never
    deletes evidence;
 8. **One report model**: terminal/JSON/HTML render the same DTO; renderers
-   neither adjudicate nor query the database.
+   neither adjudicate nor query the database;
+9. **Cases before rules**: add business-semantics positive/negative/ambiguous QA
+   cases before changing a detector; the offline Gate measures only the
+   deterministic core, and production HCR is collected separately — neither is
+   used to dress up the other.

@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-green)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-193%20passed-success)](#测试)
+[![Tests](https://img.shields.io/badge/tests-213%20passed-success)](#测试)
 
 企业制度、价格表、产品手册会持续修订，但 AI 助手引用的往往是旧版本：跨文档口径
 冲突、已被新版本取代的政策、无人复核的过期数字、同一实体的多种异写……TruthLayer
@@ -184,6 +184,7 @@ embedding:
 | `truthlayer drift show <id>` | 单条详情：新旧事实、原文证据、AI 影响与建议操作 |
 | `truthlayer drift ignore <id> [--reason …]` | 忽略（指纹记住，不再重复报出） |
 | `truthlayer resolve <id> --decision …` | 人工处置，见下方决策说明 |
+| `truthlayer eval [--cases …]` | 跑 Golden QA 评测集并计算 Phase 0 Gate 指标（不连库、不调 LLM） |
 | `truthlayer --version` | 版本信息 |
 
 报告与 CI 门禁：
@@ -218,6 +219,42 @@ truthlayer resolve <drift-id> --decision accept_newer `
 - `1` 存在达到或超过 `ci.fail_on` 阈值的**开放**漂移（已忽略/已处置不阻断）；
 - `2` 配置/数据库/解析等系统错误。
 
+## 评测与 Phase 0 Gate
+
+TruthLayer 用一套 **Golden QA 评测集**衡量"给定正确事实后，确定性检测器的裁决质量"。
+每条用例是一个自包含场景（文档 / 实体 / 事实 + 规则阈值 + 期望漂移），评测时直接
+映射为内存中的知识状态并喂给**真实检测器**——不连数据库、不调用 LM、毫秒级、结果完全
+确定，因此任何人 clone 即可复跑，也作为回归测试在每次测试时强制执行：
+
+```powershell
+# 终端查看指标；可同时导出确定性 JSON 与 Markdown
+.\.venv\Scripts\truthlayer eval --cases .\examples\qa_cases `
+  --output eval.json --markdown eval.md
+```
+
+用例分三类：**Positive**（确有漂移，必须报）、**Negative**（正常知识，不得报）、
+**Ambiguous Negative**（看似冲突，但因时间 / 范围 / 适用对象不同而不应报）。
+
+Phase 0 Gate 阈值（严格不等号）：
+
+| 指标 | 含义 | 阈值 |
+|---|---|---|
+| Precision | 报出的问题中确为漂移的比例 | > 80% |
+| Recall | 真实漂移被检出的比例 | > 70% |
+| F1 | Precision 与 Recall 的调和平均 | > 75% |
+| FPR | 良性（正常 / 疑似冲突）场景被误报的比例 | < 30% |
+
+当前内置评测集位于 [examples/qa_cases](./examples/qa_cases)（54 条：正例 25 /
+正常负例 17 / 模糊负例 12，覆盖全部五类型），在确定性检测核心上 **Precision / Recall /
+F1 均为 100%、FPR 为 0%，Gate 通过**；同时给出每个检测器的独立 P/R 与误报分类。
+
+需要说明：该 Gate 衡量的是**确定性裁决层**（LLM 只负责候选抽取、向量只负责召回，最终
+判定全部可回溯）。端到端的抽取质量由 Ollama 真实冒烟测试覆盖；真实世界的 **HCR
+（人工确认率）** 需在实际使用中持续采集，不与上述离线指标混用。新增检测器规则时，应先
+往评测集补充业务语义驱动的正 / 负 / 模糊用例，再调整规则。
+
+`eval` 退出码：`0` Gate 通过、`1` Gate 未达标、`2` 用例无法加载或产物无法写入。
+
 ## 测试
 
 ```powershell
@@ -230,11 +267,12 @@ $env:TRUTHLAYER_DATABASE_URL="postgresql+psycopg://..."
 .\.venv\Scripts\python -m pytest
 ```
 
-当前测试套件 **193 个测试全部通过**：单元测试覆盖规范化/哈希/实体解析/证据校验/
+当前测试套件 **213 个测试全部通过**：单元测试覆盖规范化/哈希/实体解析/证据校验/
 四个检测器的全部判定规则与负例、CI 阈值矩阵、报告 DTO 的确定性序列化与 HTML
-转义；集成测试在真实 PostgreSQL 上覆盖五类型漂移的检出、落库字段、跨扫描指纹去重、
-Resolution 全生命周期（处置/忽略/重复处置防护）、报告组装以及 drift/resolve CLI
-命令。另有 1 个 Ollama 真实冒烟测试默认跳过
+转义、评测匹配 / 指标 / Gate 阈值边界，以及**零依赖的 Golden QA 回归集**（54 条用例、
+三类齐全、Gate 必须保持通过）；集成测试在真实 PostgreSQL 上覆盖五类型漂移的检出、落库字段、
+跨扫描指纹去重、Resolution 全生命周期（处置/忽略/重复处置防护）、报告组装以及 drift/resolve
+CLI 命令。另有 1 个 Ollama 真实冒烟测试默认跳过
 （设置 `TRUTHLAYER_RUN_OLLAMA=1` 才运行）。
 
 ## 文档
@@ -252,9 +290,11 @@ TruthLayer 当前处于 **Phase 0（CLI 版本）**，按 6 个 Sprint 迭代：
 - [x] Sprint 3：LLM 知识抽取、Evidence First、向量与不可变快照
 - [x] Sprint 4：漂移检测引擎（四检测器 / 五类型、指纹去重）
 - [x] Sprint 5：漂移处置流程、`drift`/`resolve` CLI、CI fail_on、HTML/JSON 报告
-- [ ] Sprint 6：评测集与指标验收（Precision / Recall / FPR）
+- [x] Sprint 6：Golden QA 评测集（54 条 / 三类）、P/R/F1/FPR 指标与零依赖回归、`truthlayer eval`
 
-**Phase 0 Gate 验收通过后正式发布 v0.1。** 当前版本号为 `0.0.1`（开发中）。
+**确定性检测核心的 Phase 0 Gate 已通过**（Golden Set：Precision / Recall / F1 = 100%，
+FPR = 0%）；真实世界的人工确认率（HCR）将随实际使用持续采集。**正式发布 v0.1 与打 tag
+待 Gate 收尾确认后进行。** 当前版本号为 `0.0.1`（开发中）。
 
 ## 参与贡献
 

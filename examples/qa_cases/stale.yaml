@@ -1,0 +1,210 @@
+# StaleDetector golden cases (#20).
+# 三层严格分离：来源年龄(仅信息) / possibly_stale(超龄启发式, 低置信) /
+# confirmed_stale(valid_to 过期或被新版显式取代, 确定性)。
+# 文档老 ≠ 知识老：没有任何年龄信号的事实绝不猜过期。
+cases:
+  # ---- Positive：confirmed_stale ----------------------------------------
+  - id: stale_confirmed_valid_to_expired
+    title: 事实有效期已结束（valid_to 早于评估日）
+    category: positive
+    documents:
+      - {id: d1, filename: 2024休假政策.md, source_type: policy}
+    entities:
+      - {id: b1, name: 年假政策, type: policy}
+    facts:
+      - {id: f1, subject: b1, predicate: annual_leave_days, value: 5, value_type: number, source: d1, valid_to: 2025-12-31}
+    expected_drifts:
+      - {type: confirmed_stale, subject: b1, predicate: annual_leave_days, severity: medium}
+
+  - id: stale_confirmed_superseding_source
+    title: 来源文档已被更新版本显式取代（同时产生文档级 superseded）
+    category: positive
+    documents:
+      - {id: dold, filename: 产品价格表_2025.csv, source_type: pricing}
+      - {id: dnew, filename: 产品价格表_2026.csv, source_type: pricing, previous_version_of: dold}
+    entities:
+      - {id: p1, name: 标准版套餐, type: product}
+    facts:
+      - {id: f1, subject: p1, predicate: list_price, value: 100, value_type: number, source: dold}
+    expected_drifts:
+      - {type: confirmed_stale, subject: p1, predicate: list_price, severity: medium, old_source: 产品价格表_2025.csv, new_source: 产品价格表_2026.csv}
+      - {type: superseded, severity: medium, old_source: 产品价格表_2025.csv, new_source: 产品价格表_2026.csv}
+
+  - id: stale_confirmed_both_signals
+    title: 有效期已过且来源被新版取代，两个确定性信号叠加
+    category: positive
+    documents:
+      - {id: dold, filename: 差旅制度_v1.md, source_type: policy}
+      - {id: dnew, filename: 差旅制度_v2.md, source_type: policy, previous_version_of: dold}
+    entities:
+      - {id: t1, name: 差旅住宿标准, type: policy}
+    facts:
+      - {id: f1, subject: t1, predicate: hotel_cap_cny, value: 300, value_type: number, source: dold, valid_to: 2025-06-30}
+    expected_drifts:
+      - {type: confirmed_stale, subject: t1, predicate: hotel_cap_cny, severity: medium}
+      - {type: superseded, severity: medium, old_source: 差旅制度_v1.md, new_source: 差旅制度_v2.md}
+
+  - id: stale_confirmed_pricing_critical
+    title: 价格类事实过期按配置升级为严重级
+    category: positive
+    rules:
+      severity: {pricing_change: critical}
+    documents:
+      - {id: d1, filename: 2024价格表.csv, source_type: pricing}
+    entities:
+      - {id: p1, name: 增值服务包, type: product}
+    facts:
+      - {id: f1, subject: p1, predicate: addon_price, value: 50, value_type: number, source: d1, valid_to: 2025-10-01}
+    expected_drifts:
+      - {type: confirmed_stale, subject: p1, predicate: addon_price, severity: critical}
+
+  - id: stale_confirmed_policy_override_high
+    title: 制度类过期按配置升级为高级
+    category: positive
+    rules:
+      severity: {policy_change: high}
+    documents:
+      - {id: d1, filename: 旧考勤制度.md, source_type: policy}
+    entities:
+      - {id: b1, name: 弹性考勤制度, type: policy}
+    facts:
+      - {id: f1, subject: b1, predicate: core_hours, value: 09:00-18:00, value_type: string, source: d1, valid_to: 2025-03-31}
+    expected_drifts:
+      - {type: confirmed_stale, subject: b1, predicate: core_hours, severity: high}
+
+  - id: stale_confirmed_aged_and_superseded_not_possibly
+    title: 超龄且被取代时只报 confirmed，不再重复报 possibly（三层不重叠）
+    category: positive
+    documents:
+      - {id: dold, filename: 会员权益_2024.md, source_type: policy}
+      - {id: dnew, filename: 会员权益_2026.md, source_type: policy, previous_version_of: dold}
+    entities:
+      - {id: m1, name: 银卡会员, type: tier}
+    facts:
+      - {id: f1, subject: m1, predicate: point_multiplier, value: 1.2, value_type: number, source: dold, observed_at: 2024-03-01}
+    expected_drifts:
+      - {type: confirmed_stale, subject: m1, predicate: point_multiplier, severity: medium}
+      - {type: superseded, severity: medium, old_source: 会员权益_2024.md, new_source: 会员权益_2026.md}
+
+  # ---- Positive：possibly_stale（仅超龄启发式） ---------------------------
+  - id: stale_possibly_observed_over_threshold
+    title: 观测时间超过默认 365 天阈值，疑似过期
+    category: positive
+    documents:
+      - {id: d1, filename: 设备维保说明.md, source_type: general}
+    entities:
+      - {id: eq1, name: 空调机组A, type: equipment}
+    facts:
+      - {id: f1, subject: eq1, predicate: maintenance_cycle_months, value: 6, value_type: number, source: d1, observed_at: 2025-05-01}
+    expected_drifts:
+      - {type: possibly_stale, subject: eq1, predicate: maintenance_cycle_months, severity: warning}
+
+  - id: stale_possibly_valid_from_over_threshold
+    title: 无观测时间时以生效时间计龄，超阈值疑似过期
+    category: positive
+    documents:
+      - {id: d1, filename: 老旧操作手册.md, source_type: general}
+    entities:
+      - {id: eq1, name: 锅炉B2, type: equipment}
+    facts:
+      - {id: f1, subject: eq1, predicate: safety_valve_model, value: SV-100, value_type: string, source: d1, valid_from: 2024-06-01}
+    expected_drifts:
+      - {type: possibly_stale, subject: eq1, predicate: safety_valve_model, severity: warning}
+
+  - id: stale_possibly_pricing_shorter_threshold
+    title: 价格来源用更短的 pricing 阈值（90 天），120 天即疑似
+    category: positive
+    rules:
+      pricing_stale_days: 90
+    documents:
+      - {id: d1, filename: 季度价格表.csv, source_type: pricing}
+    entities:
+      - {id: p1, name: 季节性促销位, type: product}
+    facts:
+      - {id: f1, subject: p1, predicate: promo_price, value: 19.9, value_type: number, source: d1, observed_at: 2026-02-01}
+    expected_drifts:
+      - {type: possibly_stale, subject: p1, predicate: promo_price, severity: warning}
+
+  - id: stale_possibly_custom_threshold
+    title: 自定义 30 天阈值，61 天未复核即疑似
+    category: positive
+    rules:
+      stale_after_days: 30
+    documents:
+      - {id: d1, filename: 促销活动页.md, source_type: general}
+    entities:
+      - {id: c1, name: 春季大促, type: campaign}
+    facts:
+      - {id: f1, subject: c1, predicate: discount_rate, value: 0.8, value_type: number, source: d1, observed_at: 2026-04-01}
+    expected_drifts:
+      - {type: possibly_stale, subject: c1, predicate: discount_rate, severity: warning}
+
+  # ---- Negative：不该报警 -----------------------------------------------
+  - id: stale_neg_no_age_signal
+    title: 完全没有年龄信号的事实绝不猜过期
+    category: negative
+    documents:
+      - {id: d1, filename: 通用术语表.md, source_type: general, parsed_at: 2020-01-01}
+    entities:
+      - {id: x1, name: 工单状态, type: concept}
+    facts:
+      - {id: f1, subject: x1, predicate: definition, value: 工单从创建到关闭的全过程, value_type: string, source: d1}
+    expected_drifts: []
+
+  - id: stale_neg_age_under_threshold
+    title: 92 天未复核，未到 365 天阈值
+    category: negative
+    documents:
+      - {id: d1, filename: 本季服务说明.md, source_type: general}
+    entities:
+      - {id: s1, name: 上门安装服务, type: service}
+    facts:
+      - {id: f1, subject: s1, predicate: response_hours, value: 24, value_type: number, source: d1, observed_at: 2026-03-01}
+    expected_drifts: []
+
+  - id: stale_neg_valid_to_equals_as_of_boundary
+    title: valid_to 恰等于评估日（严格小于才过期），不报
+    category: negative
+    documents:
+      - {id: d1, filename: 当期政策.md, source_type: policy}
+    entities:
+      - {id: b1, name: 高温补贴政策, type: policy}
+    facts:
+      - {id: f1, subject: b1, predicate: subsidy_cny, value: 200, value_type: number, source: d1, valid_to: 2026-06-01}
+    expected_drifts: []
+
+  # ---- Ambiguous Negative：看似该报，实则不应报 --------------------------
+  - id: stale_amb_old_document_fresh_fact
+    title: 文档很旧但事实最近仍被观测，知识并未老化
+    category: ambiguous_negative
+    documents:
+      - {id: d1, filename: 长期有效的服务章程.md, source_type: general, parsed_at: 2019-01-01}
+    entities:
+      - {id: s1, name: 贵宾接待规范, type: service}
+    facts:
+      - {id: f1, subject: s1, predicate: greeting_rule, value: 主动问好并奉茶, value_type: string, source: d1, observed_at: 2026-05-15}
+    expected_drifts: []
+
+  - id: stale_amb_old_valid_from_recent_review
+    title: 生效很早但最近复核确认仍有效，不因起始早就报疑似
+    category: ambiguous_negative
+    documents:
+      - {id: d1, filename: 安全红线制度.md, source_type: policy}
+    entities:
+      - {id: b1, name: 动火作业规范, type: policy}
+    facts:
+      - {id: f1, subject: b1, predicate: require_permit, value: true, value_type: boolean, source: d1, valid_from: 2020-01-01, observed_at: 2026-05-10}
+    expected_drifts: []
+
+  - id: stale_amb_pricing_within_configured_grace
+    title: 价格来源 182 天，但配置给予 365 天宽限，未超期
+    category: ambiguous_negative
+    rules:
+      pricing_stale_days: 365
+    documents:
+      - {id: d1, filename: 稳定定价表.csv, source_type: pricing}
+    entities:
+      - {id: p1, name: 延保服务, type: product}
+    facts:
+      - {id: f1, subject: p1, predicate: warranty_ext_price, value: 99, value_type: number, source: d1, observed_at: 2025-12-01}
+    expected_drifts: []

@@ -1,0 +1,93 @@
+# SupersededDetector golden cases (#18, #8).
+# 文档级漂移：只有摄取阶段从显式 supersedes 映射得到的版本边才算数。
+# 绝不根据文件名、版本标签或时间排序去"推断"取代关系。
+# 该检测器只看文档，不依赖事实，因此下列用例均不含 facts。
+cases:
+  # ---- Positive：显式版本替换 -------------------------------------------
+  - id: superseded_explicit_pair
+    title: 新文档显式声明取代旧文档，产生一条文档级漂移
+    category: positive
+    documents:
+      - {id: dold, filename: 员工手册_2024.pdf, source_type: policy}
+      - {id: dnew, filename: 员工手册_2025.pdf, source_type: policy, previous_version_of: dold}
+    entities: []
+    facts: []
+    expected_drifts:
+      - {type: superseded, severity: medium, old_source: 员工手册_2024.pdf, new_source: 员工手册_2025.pdf}
+
+  - id: superseded_chain_two_drifts
+    title: 显式版本链 A→B→C，每个被取代文档各产生一条
+    category: positive
+    documents:
+      - {id: da, filename: 安全规程_v1.md, source_type: policy}
+      - {id: db, filename: 安全规程_v2.md, source_type: policy, previous_version_of: da}
+      - {id: dc, filename: 安全规程_v3.md, source_type: policy, previous_version_of: db}
+    entities: []
+    facts: []
+    expected_drifts:
+      - {type: superseded, severity: medium, old_source: 安全规程_v1.md, new_source: 安全规程_v2.md}
+      - {type: superseded, severity: medium, old_source: 安全规程_v2.md, new_source: 安全规程_v3.md}
+
+  - id: superseded_pricing_critical
+    title: 价格类文档被取代，按配置升级为严重级
+    category: positive
+    rules:
+      severity: {pricing_change: critical}
+    documents:
+      - {id: dold, filename: 报价单_2025Q4.csv, source_type: pricing}
+      - {id: dnew, filename: 报价单_2026Q1.csv, source_type: pricing, previous_version_of: dold}
+    entities: []
+    facts: []
+    expected_drifts:
+      - {type: superseded, severity: critical, old_source: 报价单_2025Q4.csv, new_source: 报价单_2026Q1.csv}
+
+  # ---- Negative：没有显式边 ---------------------------------------------
+  - id: superseded_neg_single_document
+    title: 只有一份文档无从取代
+    category: negative
+    documents:
+      - {id: d1, filename: 独立制度.md, source_type: policy}
+    entities: []
+    facts: []
+    expected_drifts: []
+
+  - id: superseded_neg_two_independent
+    title: 两份彼此独立的文档不构成取代
+    category: negative
+    documents:
+      - {id: da, filename: 报销制度.md, source_type: policy}
+      - {id: db, filename: 采购制度.md, source_type: policy}
+    entities: []
+    facts: []
+    expected_drifts: []
+
+  - id: superseded_neg_same_group_no_edge
+    title: 同属一个文档分组但没有显式版本边，不推断取代
+    category: negative
+    documents:
+      - {id: da, filename: 表单库_第一册.md, source_type: general, group: forms}
+      - {id: db, filename: 表单库_第二册.md, source_type: general, group: forms}
+    entities: []
+    facts: []
+    expected_drifts: []
+
+  # ---- Ambiguous Negative：看似新旧版本，实则无显式声明 -------------------
+  - id: superseded_amb_version_numbers_no_edge
+    title: 文件名带 v1/v2 但没有显式 supersedes 声明，不报警
+    category: ambiguous_negative
+    documents:
+      - {id: da, filename: 服务条款_v1.docx, source_type: legal}
+      - {id: db, filename: 服务条款_v2.docx, source_type: legal}
+    entities: []
+    facts: []
+    expected_drifts: []
+
+  - id: superseded_amb_year_titles_no_edge
+    title: 文件名含年份看似新旧，未显式声明取代前不报警
+    category: ambiguous_negative
+    documents:
+      - {id: da, filename: 2025收费标准.csv, source_type: pricing}
+      - {id: db, filename: 2026收费标准.csv, source_type: pricing}
+    entities: []
+    facts: []
+    expected_drifts: []
