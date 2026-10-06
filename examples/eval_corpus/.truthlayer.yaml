@@ -22,6 +22,11 @@ sources:
 rules:
   stale_after_days: 365
   pricing_stale_days: 90
+  # 渠道/销售通道是天然多值属性：同一可售服务可同时走直营与经销，
+  # 两表各自的“渠道”取值不构成冲突（跨渠道价格冲突仍会正常报，见 G4）。
+  multi_valued_predicates:
+    - 渠道
+    - channel
 
 severity:
   pricing_change: high

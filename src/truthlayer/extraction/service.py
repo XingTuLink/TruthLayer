@@ -44,6 +44,7 @@ from truthlayer.domain.enums import DocumentStatus, FactStatus, ObjectType
 from truthlayer.domain.errors import DomainValidationError, ProviderError
 from truthlayer.domain.evidence import Evidence
 from truthlayer.domain.fact import FactClaim
+from truthlayer.extraction.chunk_review import propagate_review_dates
 from truthlayer.extraction.entities import EntityResolver
 from truthlayer.extraction.knowledge_hash import (
     compute_knowledge_hash,
@@ -71,6 +72,7 @@ class ExtractionResult:
     facts_new: int = 0
     facts_total: int = 0
     entities_total: int = 0
+    review_dates_propagated: int = 0
     chunk_embeddings: int = 0
     entity_embeddings: int = 0
     embedding_dim: int | None = None
@@ -349,6 +351,11 @@ class KnowledgeExtractionService:
         for raw_entity in envelope.entities:
             key = raw_entity.name.strip().casefold()
             declared.setdefault(key, raw_entity)
+
+        # R6: deterministically carry a subject's "last reviewed" date in the
+        # same chunk onto that subject's undated facts (before persistence),
+        # so the stale detector gets an age signal small models omit.
+        result.review_dates_propagated += propagate_review_dates(envelope.facts)
 
         for raw_fact in envelope.facts:
             self._persist_fact(

@@ -6,7 +6,7 @@ reproducible/auditable (#15). Changing the prompt MUST bump PROMPT_VERSION.
 
 from __future__ import annotations
 
-PROMPT_VERSION = "fact-extract-v3"
+PROMPT_VERSION = "fact-extract-v4"
 
 SYSTEM_PROMPT = """\
 你是企业知识事实抽取器。你的输出只是候选，系统会做确定性校验。
@@ -18,8 +18,12 @@ SYSTEM_PROMPT = """\
    （object_value + object_type，类型为 string/number/date/boolean 之一）。
 4. 数字用 JSON number；日期用 YYYY-MM-DD 字符串；布尔用 true/false。
    价格/金额只抽取数值，单位（如"元/月"）放进谓词或字符串宾语中。
-5. 事实中出现的每个实体都必须列入 entities；实体 type 用简短类别
-   （如 product / customer / policy / person / org）。
+5. 事实中出现的每个实体都必须列入 entities。实体 type 尽量取自受控词表：
+   org（组织/公司/部门）、customer（客户）、person（人物/角色）、
+   product（可售卖的产品或服务；难以区分“产品”与“服务”时统一用 product）、
+   policy（制度/规定/收费标准）、document（文档）、location（地点/区域）、other。
+   关键：同一个现实实体在不同文档中必须使用完全相同的名称与 type，
+   不要在一份文档称 product、另一份称 service。
 6. quote 必须是输入文本中连续的逐字片段（允许空白差异），不得改写。
 7. 日期口径（务必严格，错误的日期会被下游当成确定性失效信号）：
    - valid_from：仅当原文明确写出生效或更新起始日时填写

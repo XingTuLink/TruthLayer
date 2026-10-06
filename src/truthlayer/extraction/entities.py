@@ -7,8 +7,10 @@ Resolution ladder, all within one workspace:
 4. otherwise create a new entity
 
 Normalization is deliberately conservative: NFC, whitespace collapse and
-casefold. It never merges across different declared types and never guesses
-when an alias is ambiguous.
+casefold. It never guesses when an alias is ambiguous. Since R8 it merges
+same-name entities whose declared types fall in one controlled equivalence
+class (e.g. product/service drift for one sellable offering); entities across
+semantic categories (person/org/policy/...) are still never merged.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from truthlayer.db.orm import Entity, EntityAlias
+from truthlayer.extraction.entity_types import types_equivalent
 from truthlayer.extraction.schemas import RawEntity
 
 
@@ -102,26 +105,52 @@ class EntityResolver:
         """Get-or-create an entity for a declared LLM entity."""
         name = " ".join(raw.name.split())
         kind = raw.type.strip()
-        key = (normalize_name(name), normalize_type(kind))
+        norm_name = normalize_name(name)
+        key = (norm_name, normalize_type(kind))
 
         entity = self._entities.get(key)
         if entity is None:
-            entity = Entity(
-                workspace_id=self._workspace_id,
-                canonical_name=name,
-                entity_type=kind,
-            )
-            self._session.add(entity)
-            self._session.flush()
-            self._index_entity(entity)
-            self.created_count += 1
-            self._add_alias(entity, name)
+            # R8: a same-name entity whose declared type only drifted within
+            # a controlled equivalence class (product<->service) is the same
+            # real entity. Cross-semantic-category names stay split.
+            entity = self._find_same_name_equivalent(norm_name, kind)
+            if entity is None:
+                entity = Entity(
+                    workspace_id=self._workspace_id,
+                    canonical_name=name,
+                    entity_type=kind,
+                )
+                self._session.add(entity)
+                self._session.flush()
+                self._index_entity(entity)
+                self.created_count += 1
 
         # Surface forms seen in this document become aliases (idempotently).
         self._add_alias(entity, name)
         for alias in raw.aliases:
             self._add_alias(entity, alias)
         return entity
+
+    def _find_same_name_equivalent(
+        self, norm_name: str, kind: str
+    ) -> Entity | None:
+        """Return the unique same-name entity with an equivalent declared type.
+
+        Returns None (so the caller creates a new row) when there is no
+        same-name entity, when more than one already exists (ambiguous — never
+        guess), or when the types belong to different semantic categories.
+        """
+        matches = [
+            entity
+            for (candidate_name, _type), entity in self._entities.items()
+            if candidate_name == norm_name
+        ]
+        if len(matches) != 1:
+            return None
+        candidate = matches[0]
+        if types_equivalent(candidate.entity_type, kind):
+            return candidate
+        return None
 
     def _global_matches(self, norm: str) -> dict[uuid.UUID, Entity]:
         """All entities reachable by canonical name or alias (any type)."""
