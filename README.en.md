@@ -282,11 +282,12 @@ at any OpenAI-compatible online endpoint via `TRUTHLAYER_E2E_LLM_BASE_URL` /
 | run1 | qwen2.5:7b (v1) | 32 | **62.5% (20/32)** | 56.2% | **8/8** | 2 (59/90) |
 | run3 | qwen2.5:7b (v3) | 17 | **100% (17/17)** | 94.1% | 6/8 | 1 (70/99) |
 | run5 | deepseek-flash online (v3) | 39 | **89.7% (35/39)** | 84.6% | 7/8 | **0 (84/171)** |
+| run6 | deepseek-flash online (v4) | 43 | **90.7% (39/43)** | 88.4% | **8/8** | **0 (65/165)** |
 
-Across all three runs the **deterministic Golden Gate stayed at P/R/F1 = 100%, FPR = 0%**
+Across all four runs the **deterministic Golden Gate stayed at P/R/F1 = 100%, FPR = 0%**
 — whenever extraction supplies the correct entities, the detectors neither false-alarm nor
 miss. The end-to-end differences are entirely LLM-extraction non-determinism (the run-to-run
-swing in entities 59→84 and facts 90→171 is direct evidence).
+swing in entities 59→84→65 and facts 90→171→165 is direct evidence).
 
 Tuning wins and remaining gaps:
 
@@ -294,27 +295,33 @@ Tuning wins and remaining gaps:
   heuristics hit current price lists / evergreen clauses, and a recurring "every June–August"
   window was mistaken for an expiry). After two deterministic suppressions (latest version in
   a chain R1; open-ended annual rates within their edition year R2) plus the prompt-v3 date
-  rules, possibly_stale HCR is **100%** in both run3 and run5.
+  rules, possibly_stale HCR is **100%** in run3, run5 and run6.
 - **The stronger online model recovered two extraction losses**: deepseek-flash had 0 failed
   chunks, correctly wrote the heat-allowance "last reviewed 2025-07-15" into `observed_at`
   (G6 surfaces as possibly_stale) and kept "Xingyun Support Center / (Hi-Tech Branch)" as two
   entities (G8 surfaces as duplicate).
-- **Known limitation (R8, post-v0.1)**: run5's single miss is **G4** (direct-sales 800 vs
+- **R8 shipped and verified in v0.1.1**: run5's single miss was **G4** (direct-sales 800 vs
   reseller 950 cross-source conflict). The extractor labelled the same-name "data migration
   service" with **different entity types** (`service` vs `product`) in the two channel sheets;
   entity resolution keys on (workspace + canonical name + type), so it fragmented into two
-  entities and the conflict detector — grouping by (entity, predicate) — never sees the
+  entities and the conflict detector — grouping by (entity, predicate) — never saw the
   contradiction. The same fragmentation also fired 2 duplicate false alarms on deliberately
-  identical cross-channel prices (training 500 / on-site install 200), which should be mere
-  cross-source evidence. This is an entity **identity resolution** problem requiring a typed
-  strategy (type taxonomy + strong identifiers such as hotline/code + confidence), not a
-  last-minute relaxation of the deliberate "never blindly merge across types" invariant, so it
-  is logged as R8 with reproduction evidence and deferred until after v0.1 with dedicated
-  golden cases. Two further sporadic date errors: a historical "superseded-on" event treated as
-  an expiry, and a promo-window `valid_to` wrongly attached to a regular price.
+  identical cross-channel prices. v0.1.1 fixes this with a **controlled type-equivalence class**
+  (merge same-name entities only when the declared types drift within one sellable-offering
+  class, and only when the name is unique; never merge across semantic categories): in run6 the
+  service merges into one entity, 800 vs 950 correctly fires as a conflict, the false alarms
+  vanish, and **planted recall reaches 8/8**. A side effect of merging was 3 "channel =
+  direct/reseller" conflicts — channel is a legitimately **multi-valued** attribute a single
+  offering may hold at once, so declaring it via the existing `multi_valued_predicates: [渠道]`
+  config removes them (**config-corrected run6: 40 reports, HCR 97.5%, actionable 95%**).
+- **Remaining limits (R6/R7/R9)**: run6 keeps just 1 sporadic extractor false alarm — a Q2 promo
+  window `valid_to` attached to a regular price "list 199" (also seen in run2/run5, logged as an
+  extractor backlog item). **Over-merging** of differently-named entities (R7) and cross-source
+  strong-identifier normalization remain long-term work, currently backstopped by the duplicate
+  detector's "recall candidates → deterministic confirmation".
 
 Reproduce with `scripts/e2e_eval.py`, then score against human labels with
-`scripts/e2e_score.py --run <dir> --labels <dir>/labels.json`. The curated run1/run5 labels
+`scripts/e2e_score.py --run <dir> --labels <dir>/labels.json`. The curated run1/run5/run6 labels
 and scores live in [examples/eval_corpus/results](./examples/eval_corpus/results).
 
 `eval` exit codes: `0` Gate passed, `1` Gate failed, `2` cases could not be loaded or
@@ -364,11 +371,12 @@ TruthLayer is currently in **Phase 0 (CLI edition)**, iterating in six sprints:
 
 **The Phase 0 Gate for the deterministic core is passed** (golden set:
 Precision / Recall / F1 = 100%, FPR = 0%, and this 100/0 held across every real-LLM
-end-to-end run). Real-LLM end-to-end HCR evolved over three runs (qwen2.5:7b v1 62.5% /
-8-of-8 recall → v3 100% / 6-of-8 → online deepseek-flash 89.7% / 7-of-8), confirming the
-end-to-end weak spot is non-determinism in LLM entity-identity and date extraction, now
-mapped to the R6/R8 backlog. **The first release, v0.1.0 (a CLI-first experimental
-edition), is published.** The current version is `0.1.0`.
+end-to-end run). Real-LLM end-to-end HCR evolved over four runs (qwen2.5:7b v1 62.5% /
+8-of-8 recall → v3 100% / 6-of-8 → online deepseek-flash v3 89.7% / 7-of-8 → v4 90.7% / 8-of-8),
+confirming the end-to-end weak spot is non-determinism in LLM entity-identity and date
+extraction, whose cross-source type-fragmentation (R8) is now fixed in v0.1.1. **The first
+release, v0.1.0 (a CLI-first experimental edition), is published, with the quality-polish
+release v0.1.1 following.** The current version is `0.1.1`.
 
 ## Contributing
 

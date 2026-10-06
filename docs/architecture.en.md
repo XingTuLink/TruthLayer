@@ -105,7 +105,7 @@ produce warnings.
 
 ### 4.2 Extraction
 
-- LLM output is constrained by a versioned schema (`fact-extract-v3`), with a
+- LLM output is constrained by a versioned schema (`fact-extract-v4`), with a
   three-level fallback: strict `json_schema` → JSON mode → prompt-only.
   **Outputs at every level are re-validated by our own Pydantic models and the
   deterministic `FactClaim`/`Evidence` checks**;
@@ -113,7 +113,11 @@ produce warnings.
   match. Cross-type ambiguity is rejected rather than guessed. When a small
   model forgets to declare an entity, an undeclared reference that resolves
   uniquely is deterministically salvaged as an `unknown`-type entity with a
-  warning (the evidence requirement and ambiguity rejection are never relaxed);
+  warning (the evidence requirement and ambiguity rejection are never relaxed).
+  **R8 (v0.1.1)**: same-name entities whose declared types drift only within the
+  controlled "sellable-offering" class (product↔service and similar synonyms,
+  and only when the name is unique) are deterministically merged into one entity;
+  merging across semantic categories (person/org/policy/unknown…) never happens;
 - **Evidence First**: every fact has at least one piece of evidence (document,
   chunk, page, verbatim quote, source type, authority). If the model's quote is
   not found verbatim in the source, the evidence is re-anchored to the chunk

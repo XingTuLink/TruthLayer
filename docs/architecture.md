@@ -90,12 +90,14 @@ workspaces
 
 ### 4.2 抽取（extraction）
 
-- LLM 输出受版本化 schema（`fact-extract-v3`）约束，支持 strict json_schema →
+- LLM 输出受版本化 schema（`fact-extract-v4`）约束，支持 strict json_schema →
   JSON mode → prompt-only 三级降级；**任何一级的输出都要再过我方 Pydantic +
   `FactClaim`/`Evidence` 确定性校验**；
 - 实体解析顺序：规范名精确匹配 → 别名 → 全局唯一匹配；跨类型歧义直接拒绝、
   不猜测；小模型漏报实体时，未声明引用确定性补救为 `unknown` 类型并告警
-  （证据要求与歧义拒绝两条红线不放松）；
+  （证据要求与歧义拒绝两条红线不放松）；**R8（v0.1.1）**：同名实体若声明类型只在
+  受控"可售品"等价类内漂移（product↔service 等同义标签、且该名唯一），确定性归并为
+  同一实体，跨语义大类（person/org/policy/unknown…）仍绝不合并；
 - **Evidence First**：每条事实至少 1 条证据（文档、chunk、页码、逐字引文、
   来源类型、权威度）；模型引文不在原文中时降级锚定到 chunk 原文并告警；
 - 扫描结束写不可变快照（只追加），并计算**确定性 Knowledge Hash**：每条事实

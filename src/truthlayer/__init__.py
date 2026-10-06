@@ -3,4 +3,4 @@
 Phase 0: CLI-first Knowledge QA / Knowledge Drift Detector.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
