@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -34,6 +35,25 @@ from truthlayer.domain.enums import DriftType
 
 #: Bump on any detector rule change; recorded on every ScanRun (#15).
 DETECTOR_VERSION = "drift-core-v1"
+
+
+def _json_safe(value: Any) -> Any:
+    """Coerce a drift ``detail`` payload into JSONB-serialisable plain data.
+
+    ``KnowledgeState`` restores date-typed fact values to real ``date``
+    objects so detectors can do window/age comparisons, and detector detail
+    payloads embed those values verbatim (e.g. duplicate's shared ``object``,
+    conflict's old/new values). psycopg's JSON adapter cannot serialise
+    ``date``/``datetime``, so the invariant is enforced at the single JSONB
+    exit rather than relying on every detector to call ``isoformat()``.
+    """
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
 
 
 @dataclass
@@ -171,7 +191,9 @@ class DriftDetectionService:
             ai_impact_level=candidate.ai_impact_level.value,
             effective_at=candidate.effective_at,
             confidence=candidate.confidence,
-            detail_jsonb={**candidate.detail, "fingerprint": fingerprint},
+            detail_jsonb=_json_safe(
+                {**candidate.detail, "fingerprint": fingerprint}
+            ),
         )
         self.session.add(drift)
         self.session.flush()
