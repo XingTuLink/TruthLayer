@@ -123,6 +123,12 @@ class StaleDetector:
         if age_days <= threshold_days:
             return None
 
+        # Bare age is only a "nobody re-verified this" nudge. Two benign
+        # shapes (current chain edition / open-ended annual rate still in its
+        # edition year) are not invalidation and must stay silent.
+        if self._age_only_suppressed(fact, document, state, context):
+            return None
+
         return DriftCandidate(
             detector_type=NAME,
             drift_type=DriftType.POSSIBLY_STALE,
@@ -150,3 +156,47 @@ class StaleDetector:
                 str(fact.id),
             ),
         )
+
+    def _age_only_suppressed(
+        self,
+        fact: FactView,
+        document: DocumentView | None,
+        state: KnowledgeState,
+        context: DetectionContext,
+    ) -> bool:
+        """Whether a bare-age possibly-stale nudge should stay silent.
+
+        Only reached when the fact is over the age threshold and carries no
+        deterministic invalidation (no expired ``valid_to``, no superseding
+        source). Two shapes are inherently "still current":
+
+        * **Current edition** — the fact's document belongs to an explicit
+          version chain and is its newest member. It is the authoritative
+          current statement until a later edition replaces it; the age of the
+          current edition is not invalidation.
+
+        * **Open-ended annual rate** — a pricing fact explicitly in effect
+          from the start of a year (YYYY-01-01) with no expiry date is the
+          rate for that edition year. It only becomes review-worthy after
+          that year closes and the pricing review threshold elapses. A
+          mid-year change (e.g. a limited campaign) is not covered and still
+          ages normally.
+        """
+        # A bounded fact (any explicit validity end) keeps the normal logic.
+        if fact.valid_to is not None:
+            return False
+
+        if document is not None and document.group_id is not None:
+            if not state.newer_version_exists(document.id):
+                return True
+
+        if (
+            document is not None
+            and document.source_type == "pricing"
+            and fact.valid_from is not None
+            and (fact.valid_from.month, fact.valid_from.day) == (1, 1)
+            and fact.valid_from.year == context.as_of.year
+        ):
+            return True
+
+        return False

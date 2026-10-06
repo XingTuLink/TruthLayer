@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -55,6 +56,32 @@ except Exception:  # noqa: BLE001 - fallback for source checkouts
     TOOL_VERSION = "0.0.1"
 
 DETECTOR_VERSION = "detectors-v1"
+
+
+def apply_llm_overrides(config):
+    """Point extraction at an online model without editing the corpus YAML.
+
+    Opt-in env overrides for the eval runner only:
+    TRUTHLAYER_E2E_LLM_BASE_URL / TRUTHLAYER_E2E_LLM_MODEL. The API key is
+    still read solely from TRUTHLAYER_LLM_API_KEY (or the slot's api_key_env)
+    via the provider factory — never from CLI args or the config file.
+    Embeddings are untouched (normally stay on local bge-m3).
+    """
+    base_url = os.environ.get("TRUTHLAYER_E2E_LLM_BASE_URL")
+    model = os.environ.get("TRUTHLAYER_E2E_LLM_MODEL")
+    if not (base_url or model) or config.extraction is None:
+        return config, False
+    updates = {}
+    if base_url:
+        updates["base_url"] = base_url
+    if model:
+        updates["model"] = model
+    return (
+        config.model_copy(
+            update={"extraction": config.extraction.model_copy(update=updates)}
+        ),
+        True,
+    )
 
 
 def _write_json(path: Path, payload, *, lines: bool = False) -> None:
@@ -127,6 +154,7 @@ def main() -> int:
     config = preparation.config
     if config.extraction is None:
         raise SystemExit("corpus config needs an 'extraction' section")
+    config, llm_overridden = apply_llm_overrides(config)
 
     run_name = f"{config.workspace.name}-{stamp}"
     config = config.model_copy(
@@ -136,7 +164,13 @@ def main() -> int:
     )
 
     print(f"[e2e] workspace={run_name}", flush=True)
-    print(f"[e2e] llm={config.extraction.model} embed={config.embedding.model if config.embedding else None}", flush=True)
+    print(
+        f"[e2e] llm={config.extraction.model} "
+        f"base_url={config.extraction.base_url or 'api.openai.com'}"
+        f"{' (env override)' if llm_overridden else ''} "
+        f"embed={config.embedding.model if config.embedding else None}",
+        flush=True,
+    )
 
     with SessionLocal() as session:
         ingestion = DocumentIngestionService(
@@ -203,6 +237,10 @@ def main() -> int:
         session.commit()
 
     args.out.mkdir(parents=True, exist_ok=True)
+    try:
+        corpus_label = str(args.corpus.resolve().relative_to(ROOT))
+    except ValueError:
+        corpus_label = str(args.corpus)
     _write_json(args.out / "report.json", json.loads(render_json(report)))
     _write_json(
         args.out / "drifts.jsonl",
@@ -215,7 +253,7 @@ def main() -> int:
         {
             "run_at": datetime.now(timezone.utc).isoformat(),
             "workspace": run_name,
-            "corpus": str(args.corpus.relative_to(ROOT)),
+            "corpus": corpus_label,
             "llm_model": config.extraction.model,
             "embedder_model": config.embedding.model if config.embedding else None,
             "prompt_version": PROMPT_VERSION,

@@ -139,6 +139,49 @@ cases:
     expected_drifts:
       - {type: possibly_stale, subject: c1, predicate: discount_rate, severity: warning}
 
+  - id: stale_possibly_standalone_policy_over_threshold
+    title: 独立（不属于版本链）的现行制度长期未复核仍应报疑似，不被“现行版本”规则抑制
+    category: positive
+    as_of: 2026-10-06
+    documents:
+      - {id: d1, filename: 高温津贴复核记录.md, source_type: policy}
+    entities:
+      - {id: b1, name: 高温津贴, type: policy}
+    facts:
+      - {id: f1, subject: b1, predicate: monthly_subsidy_cny, value: 200, value_type: number, source: d1, observed_at: 2025-07-15}
+    expected_drifts:
+      - {type: possibly_stale, subject: b1, predicate: monthly_subsidy_cny, severity: warning}
+
+  - id: stale_possibly_pricing_midyear_change_over_threshold
+    title: 年中生效的开放式价格（非年初年度费率）超 pricing 阈值仍报疑似
+    category: positive
+    as_of: 2026-10-06
+    rules:
+      pricing_stale_days: 90
+    documents:
+      - {id: d1, filename: 促销活动价格_2026Q2.md, source_type: pricing}
+    entities:
+      - {id: p1, name: 延保服务促销价, type: product}
+    facts:
+      - {id: f1, subject: p1, predicate: promo_price_cny, value: 99, value_type: number, source: d1, valid_from: 2026-06-01}
+    expected_drifts:
+      - {type: possibly_stale, subject: p1, predicate: promo_price_cny, severity: warning}
+
+  - id: stale_possibly_pricing_prior_year_annual_rate
+    title: 上一年度生效的开放式年度费率跨入新年度后，超 pricing 阈值应报疑似
+    category: positive
+    as_of: 2027-02-10
+    rules:
+      pricing_stale_days: 90
+    documents:
+      - {id: d1, filename: 实施服务费标准_2026.md, source_type: pricing}
+    entities:
+      - {id: p1, name: 实施服务人天单价, type: service}
+    facts:
+      - {id: f1, subject: p1, predicate: daily_rate_cny, value: 1200, value_type: number, source: d1, valid_from: 2026-01-01}
+    expected_drifts:
+      - {type: possibly_stale, subject: p1, predicate: daily_rate_cny, severity: warning}
+
   # ---- Negative：不该报警 -----------------------------------------------
   - id: stale_neg_no_age_signal
     title: 完全没有年龄信号的事实绝不猜过期
@@ -207,4 +250,30 @@ cases:
       - {id: p1, name: 延保服务, type: product}
     facts:
       - {id: f1, subject: p1, predicate: warranty_ext_price, value: 99, value_type: number, source: d1, observed_at: 2025-12-01}
+    expected_drifts: []
+
+  - id: stale_amb_current_chain_edition_not_stale
+    title: 版本链中最新版手册的条款即便发布超 365 天也不报疑似（现行版本不因年长而过期）
+    category: ambiguous_negative
+    as_of: 2026-10-06
+    documents:
+      - {id: dcur, filename: 员工手册_2025.md, source_type: policy, group: employee_handbook}
+    entities:
+      - {id: b1, name: 保密义务条款, type: policy}
+    facts:
+      - {id: f1, subject: b1, predicate: must_keep_confidential, value: 公司商业秘密, value_type: string, source: dcur, valid_from: 2025-07-01}
+    expected_drifts: []
+
+  - id: stale_amb_annual_rate_within_edition_year
+    title: 开放式年度费率自年初生效且无失效日，在其适用年内即便超 90 天也不报疑似
+    category: ambiguous_negative
+    as_of: 2026-10-06
+    rules:
+      pricing_stale_days: 90
+    documents:
+      - {id: d1, filename: 实施服务费标准.md, source_type: pricing}
+    entities:
+      - {id: p1, name: 实施服务人天单价, type: service}
+    facts:
+      - {id: f1, subject: p1, predicate: daily_rate_cny, value: 1200, value_type: number, source: d1, valid_from: 2026-01-01}
     expected_drifts: []
