@@ -254,8 +254,8 @@ Phase 0 Gate thresholds (strict inequalities):
 | F1 | Harmonic mean of Precision and Recall | > 75% |
 | FPR | Share of benign (normal / ambiguous) scenarios falsely alarmed | < 30% |
 
-The bundled set lives in [examples/qa_cases](./examples/qa_cases) (54 cases:
-25 positive / 17 negative / 12 ambiguous-negative, covering all five drift types).
+The bundled set lives in [examples/qa_cases](./examples/qa_cases) (59 cases:
+28 positive / 17 negative / 14 ambiguous-negative, covering all five drift types).
 On the deterministic detection core it achieves **Precision / Recall / F1 = 100% and
 FPR = 0% — Gate passed**, with per-detector P/R and a false-positive breakdown.
 
@@ -270,24 +270,52 @@ positive / negative / ambiguous cases first, then adjust the rules.
 
 Beyond the offline Gate, we also run the **full real-LLM extraction + detection**
 pipeline over **24 synthetic semi-realistic documents** (with 8 deliberately planted
-problem scenarios), then manually judge each reported drift to quantify the end-to-end
-cost of LLM extraction. The corpus, the planted scenarios and the auditable
+problem scenarios G1–G8), then manually judge each reported drift to quantify the
+end-to-end cost of LLM extraction. The corpus, the planted scenarios and the auditable
 labels/scoring artifacts live in [examples/eval_corpus](./examples/eval_corpus)
-(non-deterministic, requires a local Ollama, not a CI gate):
+(**non-deterministic, not a CI gate**; run it keyless against a local Ollama, or point
+at any OpenAI-compatible online endpoint via `TRUTHLAYER_E2E_LLM_BASE_URL` /
+`TRUTHLAYER_E2E_LLM_MODEL` — the key is read only from `TRUTHLAYER_LLM_API_KEY`):
 
-| End-to-end metric (qwen2.5:7b, 2026-10-06) | Result |
-|---|---|
-| Overall HCR (human-confirmed) | **62.5% (20/32, threshold >60%)** |
-| conflict / superseded / duplicate HCR | **100%** |
-| confirmed_stale HCR | **91.7%** |
-| possibly_stale HCR | 15.4% (weak spot: age-only heuristics hit current price lists / evergreen clauses) |
-| Planted-scenario end-to-end recall | **8/8 (100%)** |
+| Run (2026-10-06) | Model (prompt) | Reported | HCR | actionable | Planted recall | Chunks failed (entities/facts) |
+|---|---|---|---|---|---|---|
+| run1 | qwen2.5:7b (v1) | 32 | **62.5% (20/32)** | 56.2% | **8/8** | 2 (59/90) |
+| run3 | qwen2.5:7b (v3) | 17 | **100% (17/17)** | 94.1% | 6/8 | 1 (70/99) |
+| run5 | deepseek-flash online (v3) | 39 | **89.7% (35/39)** | 84.6% | 7/8 | **0 (84/171)** |
 
-This agrees with the offline Gate: the high-confidence deterministic verdicts are
-reliable; end-to-end noise is dominated by the age-based "possibly stale" heuristic and
-isolated LM date-extraction errors (e.g. treating a recurring "every June–August" window
-as an expiry date), which are tracked as tuning items. Reproduce with
-`scripts/e2e_eval.py`, then score against human labels with `scripts/e2e_score.py`.
+Across all three runs the **deterministic Golden Gate stayed at P/R/F1 = 100%, FPR = 0%**
+— whenever extraction supplies the correct entities, the detectors neither false-alarm nor
+miss. The end-to-end differences are entirely LLM-extraction non-determinism (the run-to-run
+swing in entities 59→84 and facts 90→171 is direct evidence).
+
+Tuning wins and remaining gaps:
+
+- **Age-based false alarms addressed**: run1's possibly_stale HCR was only 15.4% (age-only
+  heuristics hit current price lists / evergreen clauses, and a recurring "every June–August"
+  window was mistaken for an expiry). After two deterministic suppressions (latest version in
+  a chain R1; open-ended annual rates within their edition year R2) plus the prompt-v3 date
+  rules, possibly_stale HCR is **100%** in both run3 and run5.
+- **The stronger online model recovered two extraction losses**: deepseek-flash had 0 failed
+  chunks, correctly wrote the heat-allowance "last reviewed 2025-07-15" into `observed_at`
+  (G6 surfaces as possibly_stale) and kept "Xingyun Support Center / (Hi-Tech Branch)" as two
+  entities (G8 surfaces as duplicate).
+- **Known limitation (R8, post-v0.1)**: run5's single miss is **G4** (direct-sales 800 vs
+  reseller 950 cross-source conflict). The extractor labelled the same-name "data migration
+  service" with **different entity types** (`service` vs `product`) in the two channel sheets;
+  entity resolution keys on (workspace + canonical name + type), so it fragmented into two
+  entities and the conflict detector — grouping by (entity, predicate) — never sees the
+  contradiction. The same fragmentation also fired 2 duplicate false alarms on deliberately
+  identical cross-channel prices (training 500 / on-site install 200), which should be mere
+  cross-source evidence. This is an entity **identity resolution** problem requiring a typed
+  strategy (type taxonomy + strong identifiers such as hotline/code + confidence), not a
+  last-minute relaxation of the deliberate "never blindly merge across types" invariant, so it
+  is logged as R8 with reproduction evidence and deferred until after v0.1 with dedicated
+  golden cases. Two further sporadic date errors: a historical "superseded-on" event treated as
+  an expiry, and a promo-window `valid_to` wrongly attached to a regular price.
+
+Reproduce with `scripts/e2e_eval.py`, then score against human labels with
+`scripts/e2e_score.py --run <dir> --labels <dir>/labels.json`. The curated run1/run5 labels
+and scores live in [examples/eval_corpus/results](./examples/eval_corpus/results).
 
 `eval` exit codes: `0` Gate passed, `1` Gate failed, `2` cases could not be loaded or
 an artifact could not be written.
@@ -310,7 +338,7 @@ normalization/hashing/entity resolution/evidence validation, every decision
 branch and negative case of the four detectors, the CI threshold matrix and
 deterministic serialization / HTML escaping of the report DTO, evaluation
 matching / metrics / Gate threshold boundaries, and the **dependency-free golden
-QA regression** (54 cases across all three categories that must keep passing the
+QA regression** (59 cases across all three categories that must keep passing the
 Gate); integration tests verify the detection, persisted fields and cross-scan
 fingerprint dedup of all five drift types, the full Resolution lifecycle
 (resolve/ignore/double-resolve guards), report assembly and the drift/resolve CLI
@@ -332,14 +360,15 @@ TruthLayer is currently in **Phase 0 (CLI edition)**, iterating in six sprints:
 - [x] Sprint 3: LLM knowledge extraction, Evidence First, embeddings, immutable snapshots
 - [x] Sprint 4: drift engine (four detectors / five types, fingerprint dedup)
 - [x] Sprint 5: resolution workflow, `drift`/`resolve` CLI, CI fail_on, HTML/JSON reports
-- [x] Sprint 6: golden QA set (54 cases / 3 categories), P/R/F1/FPR metrics with dependency-free regression, `truthlayer eval`
+- [x] Sprint 6: golden QA set (59 cases / 3 categories), P/R/F1/FPR metrics with dependency-free regression, `truthlayer eval`
 
 **The Phase 0 Gate for the deterministic core is passed** (golden set:
-Precision / Recall / F1 = 100%, FPR = 0%); the first real-LLM end-to-end run measured
-**HCR = 62.5% with 8/8 planted-scenario recall** (high-confidence types at 92–100%; the
-age-based "possibly stale" heuristic awaits tuning). **The final framing for the formal
-v0.1 release and tag is pending sign-off.** The current version is `0.0.1`
-(under active development).
+Precision / Recall / F1 = 100%, FPR = 0%, and this 100/0 held across every real-LLM
+end-to-end run). Real-LLM end-to-end HCR evolved over three runs (qwen2.5:7b v1 62.5% /
+8-of-8 recall → v3 100% / 6-of-8 → online deepseek-flash 89.7% / 7-of-8), confirming the
+end-to-end weak spot is non-determinism in LLM entity-identity and date extraction, now
+mapped to the R6/R8 backlog. **The final framing for the formal v0.1 release and tag is
+pending sign-off.** The current version is `0.0.1` (under active development).
 
 ## Contributing
 

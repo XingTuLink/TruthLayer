@@ -244,8 +244,8 @@ Phase 0 Gate 阈值（严格不等号）：
 | F1 | Precision 与 Recall 的调和平均 | > 75% |
 | FPR | 良性（正常 / 疑似冲突）场景被误报的比例 | < 30% |
 
-当前内置评测集位于 [examples/qa_cases](./examples/qa_cases)（54 条：正例 25 /
-正常负例 17 / 模糊负例 12，覆盖全部五类型），在确定性检测核心上 **Precision / Recall /
+当前内置评测集位于 [examples/qa_cases](./examples/qa_cases)（59 条：正例 28 /
+正常负例 17 / 模糊负例 14，覆盖全部五类型），在确定性检测核心上 **Precision / Recall /
 F1 均为 100%、FPR 为 0%，Gate 通过**；同时给出每个检测器的独立 P/R 与误报分类。
 
 需要说明：该 Gate 衡量的是**确定性裁决层**（LLM 只负责候选抽取、向量只负责召回，最终
@@ -255,23 +255,45 @@ F1 均为 100%、FPR 为 0%，Gate 通过**；同时给出每个检测器的独�
 
 ### 端到端人工确认率（HCR）基线
 
-离线 Gate 之外，我们还用一套 **24 份合成半真实文档**（含 8 个人为埋下的问题场景）跑
+离线 Gate 之外，我们还用一套 **24 份合成半真实文档**（含 8 个人为埋下的问题场景 G1–G8）跑
 **真实 LM 抽取 + 检测**整条链路，再由人工逐条判定系统报告的漂移是否成立，以量化 LLM
 抽取带来的端到端损耗。语料、埋点与可审计的标注/算分结果见
-[examples/eval_corpus](./examples/eval_corpus)（该评测非确定性、需要本机 Ollama，
-不是 CI 门禁）：
+[examples/eval_corpus](./examples/eval_corpus)（该评测**非确定性、不是 CI 门禁**；
+可用本机 Ollama 零 Key 跑，也可通过 `TRUTHLAYER_E2E_LLM_BASE_URL` /
+`TRUTHLAYER_E2E_LLM_MODEL` 指向任意 OpenAI 兼容在线端点，Key 只从
+`TRUTHLAYER_LLM_API_KEY` 读取）：
 
-| 端到端指标（qwen2.5:7b，2026-10-06） | 结果 |
-|---|---|
-| 整体 HCR（人工确认率） | **62.5%（20/32，阈值 >60%）** |
-| conflict / superseded / duplicate HCR | **100%** |
-| confirmed_stale HCR | **91.7%** |
-| possibly_stale HCR | 15.4%（短板：纯年龄触发打到现行价目/长效条款） |
-| 埋点问题端到端召回 | **8/8（100%）** |
+| 运行（2026-10-06） | 模型（prompt） | 报告漂移 | HCR | actionable | 埋点召回 | chunks 失败（实体/事实） |
+|---|---|---|---|---|---|---|
+| run1 | qwen2.5:7b（v1） | 32 | **62.5%（20/32）** | 56.2% | **8/8** | 2（59/90） |
+| run3 | qwen2.5:7b（v3） | 17 | **100%（17/17）** | 94.1% | 6/8 | 1（70/99） |
+| run5 | deepseek-flash 在线（v3） | 39 | **89.7%（35/39）** | 84.6% | 7/8 | **0（84/171）** |
 
-结论与离线 Gate 一致：高置信的确定性裁决可靠；端到端噪声主要来自"疑似过期"的年龄启发式
-以及个别 LM 日期抽取误差（如把"每年 6–8 月"季节窗误当作失效日），已记录为后续调优项。
-复跑：`scripts/e2e_eval.py` 产出 → `scripts/e2e_score.py` 按人工标注算分。
+三次运行的**确定性 Golden Gate 始终 P/R/F1=100%、FPR=0%**——只要抽取给出正确实体，
+检测器零误报、零漏报；端到端差异全部来自 LLM 抽取的非确定性（实体数 59→84、事实数
+90→171 的逐 run 波动即是直接证据）。
+
+调优成效与残余短板：
+
+- **年龄误报已治理**：run1 的 possibly_stale HCR 仅 15.4%（纯年龄触发打到现行价目/长效
+  条款，且把"每年 6–8 月"季节窗误当失效日）。经版本链最新版/开放式年度费率两项确定性
+  抑制（R1/R2）+ prompt v3 日期口径收敛后，run3/run5 的 possibly_stale HCR 均为 **100%**。
+- **在线强模型救回两个抽取丢点**：deepseek-flash 0 chunk 失败，正确把高温津贴"最近一次
+  复核 2025-07-15"写入 `observed_at`（G6 浮现为 possibly_stale），并把"星云科技客服中心 /
+  （高新分部）"建成两个实体（G8 浮现为 duplicate）。
+- **已知限制（R8，v0.1 后处理）**：run5 唯一漏报 **G4**（直营 800 / 经销 950 跨源冲突）。
+  根因是抽取层把同名"数据迁移服务"在两份渠道表里标成了**不同实体类型**（`service` vs
+  `product`），实体解析按「工作区 + 规范名 + 类型」建键，于是碎裂成两个实体，冲突检测器
+  按「实体 + 谓词」分组便看不到这对矛盾；同一碎裂还让两份渠道表里**刻意同价**的企业培训
+  500 / 上门安装 200 触发 2 张 duplicate 误报（本应只作跨源多证据）。这是实体**身份归一**
+  问题，需要"类型分类法 + 强标识（热线/编码）+ 置信度"的一整套策略，而非临发版放松
+  「绝不跨类型盲合」的安全不变量，故记录为 R8 并附复现证据，留待 v0.1 后带专属 golden
+  用例实现。另有 2 张偶发日期误报：把"被取代失效日期"这一历史事件当到期事实、把促销窗
+  `valid_to` 错挂到常规价。
+
+复跑：`scripts/e2e_eval.py` 产出 → `scripts/e2e_score.py --run <dir> --labels
+<dir>/labels.json` 按人工标注算分；已固化的 run1/run5 标注与算分见
+[examples/eval_corpus/results](./examples/eval_corpus/results)。
 
 `eval` 退出码：`0` Gate 通过、`1` Gate 未达标、`2` 用例无法加载或产物无法写入。
 
@@ -289,7 +311,7 @@ $env:TRUTHLAYER_DATABASE_URL="postgresql+psycopg://..."
 
 当前测试套件 **214 个测试全部通过**：单元测试覆盖规范化/哈希/实体解析/证据校验/
 四个检测器的全部判定规则与负例、CI 阈值矩阵、报告 DTO 的确定性序列化与 HTML
-转义、评测匹配 / 指标 / Gate 阈值边界，以及**零依赖的 Golden QA 回归集**（54 条用例、
+转义、评测匹配 / 指标 / Gate 阈值边界，以及**零依赖的 Golden QA 回归集**（59 条用例、
 三类齐全、Gate 必须保持通过）；集成测试在真实 PostgreSQL 上覆盖五类型漂移的检出、落库字段、
 跨扫描指纹去重、Resolution 全生命周期（处置/忽略/重复处置防护）、报告组装以及 drift/resolve
 CLI 命令。另有 1 个 Ollama 真实冒烟测试默认跳过
@@ -310,12 +332,13 @@ TruthLayer 当前处于 **Phase 0（CLI 版本）**，按 6 个 Sprint 迭代：
 - [x] Sprint 3：LLM 知识抽取、Evidence First、向量与不可变快照
 - [x] Sprint 4：漂移检测引擎（四检测器 / 五类型、指纹去重）
 - [x] Sprint 5：漂移处置流程、`drift`/`resolve` CLI、CI fail_on、HTML/JSON 报告
-- [x] Sprint 6：Golden QA 评测集（54 条 / 三类）、P/R/F1/FPR 指标与零依赖回归、`truthlayer eval`
+- [x] Sprint 6：Golden QA 评测集（59 条 / 三类）、P/R/F1/FPR 指标与零依赖回归、`truthlayer eval`
 
 **确定性检测核心的 Phase 0 Gate 已通过**（Golden Set：Precision / Recall / F1 = 100%，
-FPR = 0%）；真实 LM 端到端首测 **HCR = 62.5%、埋点召回 8/8**（高置信四类 92–100%，
-"疑似过期"年龄启发式待调优）。**正式发布 v0.1 与打 tag 的最终口径待确认。** 当前版本号
-为 `0.0.1`（开发中）。
+FPR = 0%，且该 100/0 在多轮真实 LM 端到端运行中保持不变）。真实 LM 端到端 HCR 历经三跑
+（qwen2.5:7b v1 62.5%/召回 8/8 → v3 100%/6/8 → 在线 deepseek-flash 89.7%/7/8），
+确认端到端短板集中在 LLM 实体身份与日期抽取的非确定性，已定位为 R6/R8 backlog。
+**正式发布 v0.1 与打 tag 的最终口径待确认。** 当前版本号为 `0.0.1`（开发中）。
 
 ## 参与贡献
 

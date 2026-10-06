@@ -1,0 +1,608 @@
+{
+  "reported": 39,
+  "confirmed": 35,
+  "false_alarms": 4,
+  "hcr": 0.8974,
+  "actionable": 33,
+  "actionable_rate": 0.8462,
+  "gate_hcr_threshold": 0.6,
+  "gate_hcr_passed": true,
+  "per_type": {
+    "confirmed_stale": {
+      "reported": 25,
+      "confirmed": 23,
+      "hcr": 0.92
+    },
+    "duplicate": {
+      "reported": 5,
+      "confirmed": 3,
+      "hcr": 0.6
+    },
+    "possibly_stale": {
+      "reported": 6,
+      "confirmed": 6,
+      "hcr": 1.0
+    },
+    "superseded": {
+      "reported": 3,
+      "confirmed": 3,
+      "hcr": 1.0
+    }
+  },
+  "false_alarm_categories": {
+    "extraction_cross_source_entity_fragmentation": 2,
+    "extraction_historical_event_date_as_expiry": 1,
+    "extraction_promo_window_on_regular_price": 1
+  },
+  "planted_scenarios": 8,
+  "planted_scenarios_surfaced": 7,
+  "planted_scenario_recall": 0.875,
+  "scenarios": {
+    "G1": {
+      "description": "手册 2023 被 2025 显式取代（superseded/stale）",
+      "surfaced": true,
+      "types_surfaced": [
+        "confirmed_stale",
+        "superseded"
+      ]
+    },
+    "G2": {
+      "description": "价格表 2024 被 2025 取代",
+      "surfaced": true,
+      "types_surfaced": [
+        "confirmed_stale",
+        "superseded"
+      ]
+    },
+    "G3": {
+      "description": "价格表 2025 被 2026 取代",
+      "surfaced": true,
+      "types_surfaced": [
+        "confirmed_stale",
+        "superseded"
+      ]
+    },
+    "G4": {
+      "description": "数据迁移服务直营 800/经销 950 跨源冲突",
+      "surfaced": false,
+      "types_surfaced": []
+    },
+    "G5": {
+      "description": "餐补标准 2025-06-30 到期（confirmed_stale）",
+      "surfaced": true,
+      "types_surfaced": [
+        "confirmed_stale"
+      ]
+    },
+    "G6": {
+      "description": "高温津贴复核 >365 天（possibly_stale）",
+      "surfaced": true,
+      "types_surfaced": [
+        "possibly_stale"
+      ]
+    },
+    "G7": {
+      "description": "延保促销价格 >90 天（pricing possibly_stale）",
+      "surfaced": true,
+      "types_surfaced": [
+        "confirmed_stale"
+      ]
+    },
+    "G8": {
+      "description": "星云客服中心同名/同热线重复建档（duplicate）",
+      "surfaced": true,
+      "types_surfaced": [
+        "duplicate"
+      ]
+    }
+  },
+  "adjudicated": [
+    {
+      "idx": 0,
+      "short_id": "38e125a8",
+      "type": "confirmed_stale",
+      "severity": "critical",
+      "subject": "员工手册（2023 版）",
+      "title": "「员工手册（2023 版）」的「发布日期」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G1",
+      "fp_category": null,
+      "note": "2023手册发布日期，源于已被2025版取代的旧版，不应再作为现行依据"
+    },
+    {
+      "idx": 1,
+      "short_id": "4e38ebbb",
+      "type": "confirmed_stale",
+      "severity": "critical",
+      "subject": "员工手册（2023 版）",
+      "title": "「员工手册（2023 版）」的「版本」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G1",
+      "fp_category": null,
+      "note": "旧版版本号事实，随2023版退役"
+    },
+    {
+      "idx": 2,
+      "short_id": "7d24b1bd",
+      "type": "confirmed_stale",
+      "severity": "critical",
+      "subject": "员工手册（2023 版）",
+      "title": "「员工手册（2023 版）」的「生效日期」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G1",
+      "fp_category": null,
+      "note": "旧版生效日期，随2023版退役"
+    },
+    {
+      "idx": 3,
+      "short_id": "81c1e8a8",
+      "type": "confirmed_stale",
+      "severity": "critical",
+      "subject": "工作时间",
+      "title": "「工作时间」的「标准下班时间」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G1",
+      "fp_category": null,
+      "note": "旧版标准下班时间条款，源文档已被取代"
+    },
+    {
+      "idx": 4,
+      "short_id": "864ed88a",
+      "type": "confirmed_stale",
+      "severity": "critical",
+      "subject": "通讯补贴",
+      "title": "「通讯补贴」的「标准（元/人/月）」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G1",
+      "fp_category": null,
+      "note": "旧版通讯补贴30元，valid_to 2023-12-31 且文档被取代"
+    },
+    {
+      "idx": 5,
+      "short_id": "9a2f2010",
+      "type": "confirmed_stale",
+      "severity": "critical",
+      "subject": "餐补标准",
+      "title": "「餐补标准」的「有效期至」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G5",
+      "fp_category": null,
+      "note": "餐补标准明示有效期至2025-06-30，已过期"
+    },
+    {
+      "idx": 6,
+      "short_id": "aaf1000d",
+      "type": "confirmed_stale",
+      "severity": "critical",
+      "subject": "试用期",
+      "title": "「试用期」的「统一期限（月）」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G1",
+      "fp_category": null,
+      "note": "旧版试用期6个月条款，源文档已被取代"
+    },
+    {
+      "idx": 7,
+      "short_id": "bccd2856",
+      "type": "confirmed_stale",
+      "severity": "critical",
+      "subject": "工作时间",
+      "title": "「工作时间」的「轮值安排」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G1",
+      "fp_category": null,
+      "note": "旧版周六上午轮值条款，源文档已被取代"
+    },
+    {
+      "idx": 8,
+      "short_id": "c928e904",
+      "type": "confirmed_stale",
+      "severity": "critical",
+      "subject": "节日福利金",
+      "title": "「节日福利金」的「标准（元/人/年）」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G1",
+      "fp_category": null,
+      "note": "旧版节日福利金600元，源文档已被取代"
+    },
+    {
+      "idx": 9,
+      "short_id": "c9c38900",
+      "type": "superseded",
+      "severity": "critical",
+      "subject": null,
+      "title": "文档「员工手册_2023.md」已被「员工手册_2025.md」取代，旧版不应再作为依据",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G1",
+      "fp_category": null,
+      "note": "文档级：员工手册2023被2025显式取代"
+    },
+    {
+      "idx": 10,
+      "short_id": "e44f10a3",
+      "type": "confirmed_stale",
+      "severity": "critical",
+      "subject": "在岗员工",
+      "title": "「在岗员工」的「餐补标准（每人每个工作日，单位：元）」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G5",
+      "fp_category": null,
+      "note": "餐补20元/工作日，随标准2025-06-30到期"
+    },
+    {
+      "idx": 11,
+      "short_id": "e450e0ac",
+      "type": "confirmed_stale",
+      "severity": "critical",
+      "subject": "员工手册（2023版）",
+      "title": "「员工手册（2023版）」的「被取代失效日期」已过期，不应再被 AI 引用",
+      "verdict": "false_alarm",
+      "actionable": false,
+      "gt": null,
+      "fp_category": "extraction_historical_event_date_as_expiry",
+      "note": "事实为‘2023版被取代失效日期=2025-07-01’，这是对一次历史替代事件的永久真陈述，被抽取层误加valid_to当成到期事实；本身永不过期"
+    },
+    {
+      "idx": 12,
+      "short_id": "e56e3307",
+      "type": "confirmed_stale",
+      "severity": "critical",
+      "subject": "在岗员工",
+      "title": "「在岗员工」的「餐补发放方式」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G5",
+      "fp_category": null,
+      "note": "餐补发放方式随标准到期"
+    },
+    {
+      "idx": 13,
+      "short_id": "ef3bd569",
+      "type": "confirmed_stale",
+      "severity": "critical",
+      "subject": "餐补标准",
+      "title": "「餐补标准」的「生效日期」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G5",
+      "fp_category": null,
+      "note": "餐补生效日期元事实，随该过期标准整体失效"
+    },
+    {
+      "idx": 14,
+      "short_id": "10b218ee",
+      "type": "confirmed_stale",
+      "severity": "high",
+      "subject": "延保服务",
+      "title": "「延保服务」的「促销活动期间下单客户可享受」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G7",
+      "fp_category": null,
+      "note": "Q2促销‘一次免费远程巡检’权益，推断valid_to=2026-06-30，促销窗已过"
+    },
+    {
+      "idx": 15,
+      "short_id": "2f99b1f7",
+      "type": "confirmed_stale",
+      "severity": "high",
+      "subject": "ACME CRM Pro",
+      "title": "「ACME CRM Pro」的「版本」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G3",
+      "fp_category": null,
+      "note": "2025价格表中CRM Pro版本，2025表已被2026表取代"
+    },
+    {
+      "idx": 16,
+      "short_id": "3ba30a5c",
+      "type": "superseded",
+      "severity": "high",
+      "subject": null,
+      "title": "文档「产品价格表_2025.csv」已被「产品价格表_2026.csv」取代，旧版不应再作为依据",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G3",
+      "fp_category": null,
+      "note": "文档级：产品价格表2025被2026取代"
+    },
+    {
+      "idx": 17,
+      "short_id": "5bf1f469",
+      "type": "confirmed_stale",
+      "severity": "high",
+      "subject": "ACME CRM Pro",
+      "title": "「ACME CRM Pro」的「月单价(元)」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G2",
+      "fp_category": null,
+      "note": "2024价格表CRM Pro月单价99，2024表已被取代"
+    },
+    {
+      "idx": 18,
+      "short_id": "70eb8dc5",
+      "type": "confirmed_stale",
+      "severity": "high",
+      "subject": "智能门禁X1",
+      "title": "「智能门禁X1」的「月单价(元)」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G2",
+      "fp_category": null,
+      "note": "2024价格表智能门禁X1月单价1099，2024表已被取代"
+    },
+    {
+      "idx": 19,
+      "short_id": "812b4b0d",
+      "type": "confirmed_stale",
+      "severity": "high",
+      "subject": "ACME CRM Enterprise",
+      "title": "「ACME CRM Enterprise」的「版本」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G3",
+      "fp_category": null,
+      "note": "2025价格表CRM Enterprise旗舰版，2025表已被2026取代"
+    },
+    {
+      "idx": 20,
+      "short_id": "86268c28",
+      "type": "confirmed_stale",
+      "severity": "high",
+      "subject": "智能门禁X1",
+      "title": "「智能门禁X1」的「版本」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G3",
+      "fp_category": null,
+      "note": "2025价格表智能门禁X1版本，源表已被取代"
+    },
+    {
+      "idx": 21,
+      "short_id": "9a8a6341",
+      "type": "confirmed_stale",
+      "severity": "high",
+      "subject": "智能门禁X1",
+      "title": "「智能门禁X1」的「月单价(元)」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G3",
+      "fp_category": null,
+      "note": "2025价格表智能门禁X1月单价999，源表已被取代"
+    },
+    {
+      "idx": 22,
+      "short_id": "a65f9650",
+      "type": "confirmed_stale",
+      "severity": "high",
+      "subject": "ACME CRM Enterprise",
+      "title": "「ACME CRM Enterprise」的「月单价(元)」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G3",
+      "fp_category": null,
+      "note": "2025价格表CRM Enterprise月单价299，源表已被取代"
+    },
+    {
+      "idx": 23,
+      "short_id": "a95f2dd3",
+      "type": "confirmed_stale",
+      "severity": "high",
+      "subject": "延保服务",
+      "title": "「延保服务」的「促销价（元/年）」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G7",
+      "fp_category": null,
+      "note": "延保促销价99元/年，valid_to=2026-06-30，促销价已结束"
+    },
+    {
+      "idx": 24,
+      "short_id": "df9ae03e",
+      "type": "confirmed_stale",
+      "severity": "high",
+      "subject": "ACME CRM Pro",
+      "title": "「ACME CRM Pro」的「月单价(元)」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G3",
+      "fp_category": null,
+      "note": "2025价格表CRM Pro月单价129，源表已被2026取代"
+    },
+    {
+      "idx": 25,
+      "short_id": "e3050049",
+      "type": "confirmed_stale",
+      "severity": "high",
+      "subject": "延保服务",
+      "title": "「延保服务」的「原价（元/年）」已过期，不应再被 AI 引用",
+      "verdict": "false_alarm",
+      "actionable": false,
+      "gt": null,
+      "fp_category": "extraction_promo_window_on_regular_price",
+      "note": "‘原价199元/年’是常规价，不随Q2促销结束而失效；抽取层把促销窗valid_to=2026-06-30错挂到常规价上（run2亦曾出现）"
+    },
+    {
+      "idx": 26,
+      "short_id": "f3a0c180",
+      "type": "confirmed_stale",
+      "severity": "high",
+      "subject": "ACME CRM Enterprise",
+      "title": "「ACME CRM Enterprise」的「月单价(元)」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G2",
+      "fp_category": null,
+      "note": "2024价格表CRM Enterprise月单价259，2024表已被取代"
+    },
+    {
+      "idx": 27,
+      "short_id": "fcfc6d5c",
+      "type": "superseded",
+      "severity": "high",
+      "subject": null,
+      "title": "文档「产品价格表_2024.csv」已被「产品价格表_2025.csv」取代，旧版不应再作为依据",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G2",
+      "fp_category": null,
+      "note": "文档级：产品价格表2024被2025取代"
+    },
+    {
+      "idx": 28,
+      "short_id": "0ecb80a8",
+      "type": "possibly_stale",
+      "severity": "warning",
+      "subject": "高温津贴",
+      "title": "「高温津贴」的「发放方式」长期未复核，可能已经过期（已 448 天未复核）",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G6",
+      "fp_category": null,
+      "note": "高温津贴发放方式，observed_at=2025-07-15，距今>365天未复核，possibly_stale"
+    },
+    {
+      "idx": 29,
+      "short_id": "1db2001a",
+      "type": "possibly_stale",
+      "severity": "warning",
+      "subject": "高温津贴",
+      "title": "「高温津贴」的「发放期间」长期未复核，可能已经过期（已 448 天未复核）",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G6",
+      "fp_category": null,
+      "note": "高温津贴发放期间，同一超期复核记录"
+    },
+    {
+      "idx": 30,
+      "short_id": "53ab5e28",
+      "type": "possibly_stale",
+      "severity": "warning",
+      "subject": "高温津贴",
+      "title": "「高温津贴」的「适用对象」长期未复核，可能已经过期（已 448 天未复核）",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G6",
+      "fp_category": null,
+      "note": "高温津贴适用对象，同一超期复核记录"
+    },
+    {
+      "idx": 31,
+      "short_id": "59720d41",
+      "type": "duplicate",
+      "severity": "warning",
+      "subject": "企业培训服务",
+      "title": "「企业培训服务」与「企业培训服务」疑似是同一个对象",
+      "verdict": "false_alarm",
+      "actionable": false,
+      "gt": null,
+      "fp_category": "extraction_cross_source_entity_fragmentation",
+      "note": "企业培训服务500在直营/经销两表完全一致，GROUND_TRUTH明定为跨源多证据、不报警；抽取层未跨源合并同名实体，建成两行触发duplicate误报"
+    },
+    {
+      "idx": 32,
+      "short_id": "7fff67a1",
+      "type": "duplicate",
+      "severity": "warning",
+      "subject": "上门安装服务",
+      "title": "「上门安装服务」与「上门安装服务」疑似是同一个对象",
+      "verdict": "false_alarm",
+      "actionable": false,
+      "gt": null,
+      "fp_category": "extraction_cross_source_entity_fragmentation",
+      "note": "上门安装服务200在两表一致，同属刻意一致的跨渠道价，应多证据不报警；实体碎裂导致duplicate误报"
+    },
+    {
+      "idx": 33,
+      "short_id": "87298724",
+      "type": "duplicate",
+      "severity": "warning",
+      "subject": "星云科技客服中心（高新分部）",
+      "title": "「星云科技客服中心」与「星云科技客服中心（高新分部）」疑似是同一个对象",
+      "verdict": "confirmed",
+      "actionable": false,
+      "gt": "G8",
+      "fp_category": null,
+      "note": "星云总部vs高新分部坐席数同值，属同一重复建档对；合并动作在37统一处理，本条非独立动作"
+    },
+    {
+      "idx": 34,
+      "short_id": "8b202fb9",
+      "type": "possibly_stale",
+      "severity": "warning",
+      "subject": "高温津贴",
+      "title": "「高温津贴」的「每人每月发放金额（元）」长期未复核，可能已经过期（已 448 天未复核）",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G6",
+      "fp_category": null,
+      "note": "高温津贴每人每月200元（最关键决策字段），observed_at超期"
+    },
+    {
+      "idx": 35,
+      "short_id": "917e13a6",
+      "type": "possibly_stale",
+      "severity": "warning",
+      "subject": "高温津贴",
+      "title": "「高温津贴」的「折算规则」长期未复核，可能已经过期（已 448 天未复核）",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G6",
+      "fp_category": null,
+      "note": "高温津贴折算规则，同一超期复核记录"
+    },
+    {
+      "idx": 36,
+      "short_id": "a8c01192",
+      "type": "duplicate",
+      "severity": "warning",
+      "subject": "星云科技客服中心",
+      "title": "「星云科技客服中心」与「星云科技客服中心（高新分部）」疑似是同一个对象",
+      "verdict": "confirmed",
+      "actionable": false,
+      "gt": "G8",
+      "fp_category": null,
+      "note": "星云两实体城市同值，重复对的冗余卡，合并动作在37处理"
+    },
+    {
+      "idx": 37,
+      "short_id": "ad4e8a15",
+      "type": "duplicate",
+      "severity": "warning",
+      "subject": "星云科技客服中心（高新分部）",
+      "title": "「星云科技客服中心」与「星云科技客服中心（高新分部）」疑似是同一个对象",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G8",
+      "fp_category": null,
+      "note": "星云总部/高新分部客服热线同号，识别性最强，触发并档人工动作"
+    },
+    {
+      "idx": 38,
+      "short_id": "e71cad13",
+      "type": "possibly_stale",
+      "severity": "warning",
+      "subject": "高温津贴",
+      "title": "「高温津贴」的「最近一次复核日期」长期未复核，可能已经过期（已 448 天未复核）",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G6",
+      "fp_category": null,
+      "note": "高温记录‘最近一次复核日期=2025-07-15’元事实，提供超期年龄信号本身"
+    }
+  ]
+}

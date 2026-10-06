@@ -90,7 +90,7 @@ workspaces
 
 ### 4.2 抽取（extraction）
 
-- LLM 输出受版本化 schema（`fact-extract-v1`）约束，支持 strict json_schema →
+- LLM 输出受版本化 schema（`fact-extract-v3`）约束，支持 strict json_schema →
   JSON mode → prompt-only 三级降级；**任何一级的输出都要再过我方 Pydantic +
   `FactClaim`/`Evidence` 确定性校验**；
 - 实体解析顺序：规范名精确匹配 → 别名 → 全局唯一匹配；跨类型歧义直接拒绝、

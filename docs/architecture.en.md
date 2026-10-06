@@ -105,7 +105,7 @@ produce warnings.
 
 ### 4.2 Extraction
 
-- LLM output is constrained by a versioned schema (`fact-extract-v1`), with a
+- LLM output is constrained by a versioned schema (`fact-extract-v3`), with a
   three-level fallback: strict `json_schema` → JSON mode → prompt-only.
   **Outputs at every level are re-validated by our own Pydantic models and the
   deterministic `FactClaim`/`Evidence` checks**;
