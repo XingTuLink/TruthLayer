@@ -66,6 +66,7 @@ class ExtractionResult:
     scan_run_id: uuid.UUID | None = None
     documents: int = 0
     chunks_processed: int = 0
+    chunks_failed: int = 0
     entities_new: int = 0
     facts_new: int = 0
     facts_total: int = 0
@@ -329,11 +330,20 @@ class KnowledgeExtractionService:
         prompt_input = build_user_prompt(
             chunk_text=chunk.text, filename=document.filename, page=page
         )
-        envelope = self.llm.generate_structured(
-            input_text=prompt_input,
-            output_schema=ExtractionEnvelope,
-            system_prompt=SYSTEM_PROMPT,
-        )
+        label = f"{document.filename}#chunk{chunk.chunk_index}"
+        try:
+            envelope = self.llm.generate_structured(
+                input_text=prompt_input,
+                output_schema=ExtractionEnvelope,
+                system_prompt=SYSTEM_PROMPT,
+            )
+        except ProviderError as exc:
+            # One unparseable LLM response must not abort a multi-document
+            # scan: skip the chunk (no facts are written before the call),
+            # record it, and continue. Callers see chunks_failed/errors.
+            result.chunks_failed += 1
+            result.errors.append((label, str(exc)))
+            return
 
         declared: dict[str, RawEntity] = {}
         for raw_entity in envelope.entities:

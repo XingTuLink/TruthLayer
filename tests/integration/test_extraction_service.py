@@ -35,6 +35,7 @@ from truthlayer.db.orm import (
     SnapshotEntity,
     SnapshotFact,
 )
+from truthlayer.domain.errors import ProviderError
 from truthlayer.extraction.schemas import ExtractionEnvelope, RawEntity, RawFact
 from truthlayer.extraction.service import KnowledgeExtractionService
 from truthlayer.ingestion.service import DocumentIngestionService
@@ -330,3 +331,59 @@ def test_new_document_changes_knowledge_hash(
     assert second.entity_embeddings == 1  # only the new entity
     assert second.knowledge_hash != first.knowledge_hash
     assert session.scalar(select(func.count()).select_from(Fact)) == 5
+
+
+class FlakyLLM(FakeLLM):
+    """Like FakeLLM, but one marked chunk fails every structured-output tier."""
+
+    def generate_structured(
+        self, *, input_text: str, output_schema, system_prompt=None, model=None
+    ) -> ExtractionEnvelope:
+        if "BLOCKCHUNK" in input_text:
+            raise ProviderError(
+                "LLM structured output failed on every fallback tier: boom"
+            )
+        return super().generate_structured(
+            input_text=input_text,
+            output_schema=output_schema,
+            system_prompt=system_prompt,
+            model=model,
+        )
+
+
+def test_one_unparseable_chunk_does_not_abort_scan(
+    session: Session, tmp_path: Path
+) -> None:
+    # A procedural document the model cannot fit into entity-attribute-value
+    # (all fallback tiers fail) must be skipped, not kill the whole scan.
+    config = _config(f"it-flaky-{uuid.uuid4().hex[:8]}")
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "procedural.txt").write_text(
+        "办公电脑须开启全盘加密，离开工位须锁屏。BLOCKCHUNK\n",
+        encoding="utf-8",
+    )
+    (docs / "pricing_2026.txt").write_text(
+        "ACME CRM Pro 每用户每月 149 元。\n",
+        encoding="utf-8",
+    )
+
+    DocumentIngestionService(session, config, tmp_path).run()
+    result = KnowledgeExtractionService(
+        session, config, tmp_path, FlakyLLM(), FakeEmbedder()
+    ).run()
+
+    assert result.chunks_processed == 2
+    assert result.chunks_failed == 1
+    failed_labels = [label for label, _ in result.errors]
+    assert any("procedural.txt" in label for label in failed_labels)
+
+    # The good chunk still landed; the scan completes and snapshots normally.
+    assert result.facts_total >= 1
+    run = session.get(ScanRun, result.scan_run_id)
+    assert run.status == "completed"
+    assert session.scalar(
+        select(func.count())
+        .select_from(Fact)
+        .where(Fact.workspace_id == run.workspace_id)
+    ) == result.facts_total

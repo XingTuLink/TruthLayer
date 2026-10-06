@@ -234,8 +234,9 @@ def evaluate(
 def _print_extraction_summary(result: ExtractionResult) -> None:
     typer.echo("Knowledge Extraction")
     typer.echo(f"Scan run  : {result.scan_run_id}")
+    failed = f" | {result.chunks_failed} failed" if result.chunks_failed else ""
     typer.echo(
-        f"Chunks    : {result.chunks_processed} processed | "
+        f"Chunks    : {result.chunks_processed} processed{failed} | "
         f"entities +{result.entities_new} ({result.entities_total} total) | "
         f"facts +{result.facts_new} ({result.facts_total} total)"
     )
