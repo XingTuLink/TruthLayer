@@ -21,11 +21,9 @@ venv/
 internal/real_data/**
 !internal/real_data/.gitkeep
 
-# Internal planning / status documents — not part of the public release
-/TruthLayer_AI开发工具开发建议书.md
-/TruthLayer_业务规划书.md
-/TruthLayer_开发进度.md
-/TruthLayer_项目汇报.md
+# Internal planning / status documents — not part of the public release.
+# All internal-only docs are kept in /doc (public docs live in /docs).
+/doc/
 
 # IDE
 .vscode/
