@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-green)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-213%20passed-success)](#测试)
+[![Tests](https://img.shields.io/badge/tests-214%20passed-success)](#测试)
 
 企业制度、价格表、产品手册会持续修订，但 AI 助手引用的往往是旧版本：跨文档口径
 冲突、已被新版本取代的政策、无人复核的过期数字、同一实体的多种异写……TruthLayer
@@ -253,6 +253,26 @@ F1 均为 100%、FPR 为 0%，Gate 通过**；同时给出每个检测器的独�
 （人工确认率）** 需在实际使用中持续采集，不与上述离线指标混用。新增检测器规则时，应先
 往评测集补充业务语义驱动的正 / 负 / 模糊用例，再调整规则。
 
+### 端到端人工确认率（HCR）基线
+
+离线 Gate 之外，我们还用一套 **24 份合成半真实文档**（含 8 个人为埋下的问题场景）跑
+**真实 LM 抽取 + 检测**整条链路，再由人工逐条判定系统报告的漂移是否成立，以量化 LLM
+抽取带来的端到端损耗。语料、埋点与可审计的标注/算分结果见
+[examples/eval_corpus](./examples/eval_corpus)（该评测非确定性、需要本机 Ollama，
+不是 CI 门禁）：
+
+| 端到端指标（qwen2.5:7b，2026-10-06） | 结果 |
+|---|---|
+| 整体 HCR（人工确认率） | **62.5%（20/32，阈值 >60%）** |
+| conflict / superseded / duplicate HCR | **100%** |
+| confirmed_stale HCR | **91.7%** |
+| possibly_stale HCR | 15.4%（短板：纯年龄触发打到现行价目/长效条款） |
+| 埋点问题端到端召回 | **8/8（100%）** |
+
+结论与离线 Gate 一致：高置信的确定性裁决可靠；端到端噪声主要来自"疑似过期"的年龄启发式
+以及个别 LM 日期抽取误差（如把"每年 6–8 月"季节窗误当作失效日），已记录为后续调优项。
+复跑：`scripts/e2e_eval.py` 产出 → `scripts/e2e_score.py` 按人工标注算分。
+
 `eval` 退出码：`0` Gate 通过、`1` Gate 未达标、`2` 用例无法加载或产物无法写入。
 
 ## 测试
@@ -267,7 +287,7 @@ $env:TRUTHLAYER_DATABASE_URL="postgresql+psycopg://..."
 .\.venv\Scripts\python -m pytest
 ```
 
-当前测试套件 **213 个测试全部通过**：单元测试覆盖规范化/哈希/实体解析/证据校验/
+当前测试套件 **214 个测试全部通过**：单元测试覆盖规范化/哈希/实体解析/证据校验/
 四个检测器的全部判定规则与负例、CI 阈值矩阵、报告 DTO 的确定性序列化与 HTML
 转义、评测匹配 / 指标 / Gate 阈值边界，以及**零依赖的 Golden QA 回归集**（54 条用例、
 三类齐全、Gate 必须保持通过）；集成测试在真实 PostgreSQL 上覆盖五类型漂移的检出、落库字段、
@@ -293,8 +313,9 @@ TruthLayer 当前处于 **Phase 0（CLI 版本）**，按 6 个 Sprint 迭代：
 - [x] Sprint 6：Golden QA 评测集（54 条 / 三类）、P/R/F1/FPR 指标与零依赖回归、`truthlayer eval`
 
 **确定性检测核心的 Phase 0 Gate 已通过**（Golden Set：Precision / Recall / F1 = 100%，
-FPR = 0%）；真实世界的人工确认率（HCR）将随实际使用持续采集。**正式发布 v0.1 与打 tag
-待 Gate 收尾确认后进行。** 当前版本号为 `0.0.1`（开发中）。
+FPR = 0%）；真实 LM 端到端首测 **HCR = 62.5%、埋点召回 8/8**（高置信四类 92–100%，
+"疑似过期"年龄启发式待调优）。**正式发布 v0.1 与打 tag 的最终口径待确认。** 当前版本号
+为 `0.0.1`（开发中）。
 
 ## 参与贡献
 

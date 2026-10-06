@@ -1,0 +1,62 @@
+# 端到端评测语料（Sprint 6 HCR 评测）。
+# 全部为合成的半真实企业文档，不含任何真实客户数据（建议书 #41）。
+# 用于"真实 LLM 抽取 + 确定性检测"整条链路的人工确认率（HCR）评测，
+# 与 examples/qa_cases 的零 LLM 确定性评测相互独立。
+workspace:
+  name: eval-corpus
+
+sources:
+  - path: ./docs/policies
+    authority: 0.95
+    type: policy
+  - path: ./docs/pricing
+    authority: 0.9
+    type: pricing
+  - path: ./docs/products
+    authority: 0.85
+    type: product
+  - path: ./docs/crm
+    authority: 0.8
+    type: crm
+
+rules:
+  stale_after_days: 365
+  pricing_stale_days: 90
+
+severity:
+  pricing_change: high
+  policy_change: critical
+
+ci:
+  fail_on: high
+
+# 显式版本链：手册 2023→2025；价格表 2024→2025→2026（不允许靠文件名/年份推断）。
+version_mapping:
+  - group: employee_handbook
+    files:
+      - path: 员工手册_2023.md
+        label: "2023"
+      - path: 员工手册_2025.md
+        label: "2025"
+        supersedes: 员工手册_2023.md
+  - group: product_pricing
+    files:
+      - path: 产品价格表_2024.csv
+        label: "2024"
+      - path: 产品价格表_2025.csv
+        label: "2025"
+        supersedes: 产品价格表_2024.csv
+      - path: 产品价格表_2026.csv
+        label: "2026"
+        supersedes: 产品价格表_2025.csv
+
+extraction:
+  provider: openai_compatible
+  model: qwen2.5:7b
+  base_url: http://localhost:11434/v1
+
+embedding:
+  provider: openai_compatible
+  model: bge-m3
+  base_url: http://localhost:11434/v1
+  dimensions: 1024

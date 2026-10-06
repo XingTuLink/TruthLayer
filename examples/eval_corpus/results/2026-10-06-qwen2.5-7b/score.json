@@ -1,0 +1,524 @@
+{
+  "reported": 32,
+  "confirmed": 20,
+  "false_alarms": 12,
+  "hcr": 0.625,
+  "actionable": 18,
+  "actionable_rate": 0.5625,
+  "gate_hcr_threshold": 0.6,
+  "gate_hcr_passed": true,
+  "per_type": {
+    "confirmed_stale": {
+      "reported": 12,
+      "confirmed": 11,
+      "hcr": 0.9167
+    },
+    "conflict": {
+      "reported": 1,
+      "confirmed": 1,
+      "hcr": 1.0
+    },
+    "duplicate": {
+      "reported": 3,
+      "confirmed": 3,
+      "hcr": 1.0
+    },
+    "possibly_stale": {
+      "reported": 13,
+      "confirmed": 2,
+      "hcr": 0.1538
+    },
+    "superseded": {
+      "reported": 3,
+      "confirmed": 3,
+      "hcr": 1.0
+    }
+  },
+  "false_alarm_categories": {
+    "age_only_evergreen_policy": 5,
+    "age_only_pricing_threshold": 6,
+    "extraction_date_hallucination": 1
+  },
+  "planted_scenarios": 8,
+  "planted_scenarios_surfaced": 8,
+  "planted_scenario_recall": 1.0,
+  "scenarios": {
+    "G1": {
+      "description": "手册 2023 被 2025 显式取代（superseded/stale）",
+      "surfaced": true,
+      "types_surfaced": [
+        "confirmed_stale",
+        "superseded"
+      ]
+    },
+    "G2": {
+      "description": "价格表 2024 被 2025 取代",
+      "surfaced": true,
+      "types_surfaced": [
+        "confirmed_stale",
+        "superseded"
+      ]
+    },
+    "G3": {
+      "description": "价格表 2025 被 2026 取代",
+      "surfaced": true,
+      "types_surfaced": [
+        "confirmed_stale",
+        "superseded"
+      ]
+    },
+    "G4": {
+      "description": "数据迁移服务直营 800/经销 950 跨源冲突",
+      "surfaced": true,
+      "types_surfaced": [
+        "conflict"
+      ]
+    },
+    "G5": {
+      "description": "餐补标准 2025-06-30 到期（confirmed_stale）",
+      "surfaced": true,
+      "types_surfaced": [
+        "confirmed_stale"
+      ]
+    },
+    "G6": {
+      "description": "高温津贴复核 >365 天（possibly_stale）",
+      "surfaced": true,
+      "types_surfaced": [
+        "confirmed_stale"
+      ]
+    },
+    "G7": {
+      "description": "延保促销价格 >90 天（pricing possibly_stale）",
+      "surfaced": true,
+      "types_surfaced": [
+        "possibly_stale"
+      ]
+    },
+    "G8": {
+      "description": "星云客服中心同名/同热线重复建档（duplicate）",
+      "surfaced": true,
+      "types_surfaced": [
+        "duplicate"
+      ]
+    }
+  },
+  "adjudicated": [
+    {
+      "idx": 0,
+      "short_id": "1983aeb6",
+      "type": "confirmed_stale",
+      "severity": "critical",
+      "subject": "餐补标准",
+      "title": "「餐补标准」的「不适用于」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G5",
+      "fp_category": null,
+      "note": "餐补文档明确有效期至2025-06-30，确已过期，不应再引用"
+    },
+    {
+      "idx": 1,
+      "short_id": "3f1c2784",
+      "type": "superseded",
+      "severity": "critical",
+      "subject": null,
+      "title": "文档「员工手册_2023.md」已被「员工手册_2025.md」取代，旧版不应再作为依据",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G1",
+      "fp_category": null,
+      "note": "员工手册2023被2025显式取代，版本链正确"
+    },
+    {
+      "idx": 2,
+      "short_id": "76633ce0",
+      "type": "confirmed_stale",
+      "severity": "critical",
+      "subject": "餐补标准",
+      "title": "「餐补标准」的「规定」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G5",
+      "fp_category": null,
+      "note": "20元/工作日餐补位于已失效文档，确认过期"
+    },
+    {
+      "idx": 3,
+      "short_id": "8919b5f2",
+      "type": "confirmed_stale",
+      "severity": "critical",
+      "subject": "节日福利金",
+      "title": "「节日福利金」的「标准为每人每年 600 元」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G1",
+      "fp_category": null,
+      "note": "2023手册节日福利金600元，来源文档已被取代"
+    },
+    {
+      "idx": 4,
+      "short_id": "9556d45c",
+      "type": "confirmed_stale",
+      "severity": "critical",
+      "subject": "通讯补贴",
+      "title": "「通讯补贴」的「为每人每月 30 元」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G1",
+      "fp_category": null,
+      "note": "2023手册通讯补贴30元，来源文档已被取代"
+    },
+    {
+      "idx": 5,
+      "short_id": "fc42088a",
+      "type": "confirmed_stale",
+      "severity": "critical",
+      "subject": "室外及高温岗位员工",
+      "title": "「室外及高温岗位员工」的「每月发放高温津贴」已过期，不应再被 AI 引用",
+      "verdict": "false_alarm",
+      "actionable": false,
+      "gt": "G6",
+      "fp_category": "extraction_date_hallucination",
+      "note": "原文为每年6-8月循环发放、仅2025-07复核未废止；模型把季节窗误抽成valid_to=2025-08-31，导致把现行津贴误判为critical过期（场景G6浮现但类型/严重度错误）"
+    },
+    {
+      "idx": 6,
+      "short_id": "fd12e72e",
+      "type": "confirmed_stale",
+      "severity": "critical",
+      "subject": "试用期",
+      "title": "「试用期」的「统一为 6 个月」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G1",
+      "fp_category": null,
+      "note": "2023手册试用期统一6个月，新版改按劳动法，旧值应停用"
+    },
+    {
+      "idx": 7,
+      "short_id": "128139cb",
+      "type": "confirmed_stale",
+      "severity": "high",
+      "subject": "ACME CRM Pro",
+      "title": "「ACME CRM Pro」的「月单价」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G3",
+      "fp_category": null,
+      "note": "2025价目CRM Pro 129被2026价目取代"
+    },
+    {
+      "idx": 8,
+      "short_id": "514937de",
+      "type": "superseded",
+      "severity": "high",
+      "subject": null,
+      "title": "文档「产品价格表_2024.csv」已被「产品价格表_2025.csv」取代，旧版不应再作为依据",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G2",
+      "fp_category": null,
+      "note": "价格表2024被2025显式取代"
+    },
+    {
+      "idx": 9,
+      "short_id": "77e517f6",
+      "type": "confirmed_stale",
+      "severity": "high",
+      "subject": "智能门禁X1",
+      "title": "「智能门禁X1」的「月单价」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G2",
+      "fp_category": null,
+      "note": "2024价目门禁X1 1099，来源已被取代"
+    },
+    {
+      "idx": 10,
+      "short_id": "91eb8b36",
+      "type": "confirmed_stale",
+      "severity": "high",
+      "subject": "智能门禁X1",
+      "title": "「智能门禁X1」的「月单价」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G3",
+      "fp_category": null,
+      "note": "2025价目门禁X1 999被2026取代"
+    },
+    {
+      "idx": 11,
+      "short_id": "9b360353",
+      "type": "confirmed_stale",
+      "severity": "high",
+      "subject": "ACME CRM Enterprise",
+      "title": "「ACME CRM Enterprise」的「月单价」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G2",
+      "fp_category": null,
+      "note": "2024价目Enterprise 259，来源已被取代"
+    },
+    {
+      "idx": 12,
+      "short_id": "bb22df24",
+      "type": "confirmed_stale",
+      "severity": "high",
+      "subject": "ACME CRM Pro",
+      "title": "「ACME CRM Pro」的「月单价」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G2",
+      "fp_category": null,
+      "note": "2024价目CRM Pro 99，来源已被取代"
+    },
+    {
+      "idx": 13,
+      "short_id": "c3b8945d",
+      "type": "superseded",
+      "severity": "high",
+      "subject": null,
+      "title": "文档「产品价格表_2025.csv」已被「产品价格表_2026.csv」取代，旧版不应再作为依据",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G3",
+      "fp_category": null,
+      "note": "价格表2025被2026显式取代"
+    },
+    {
+      "idx": 14,
+      "short_id": "c6d5c430",
+      "type": "conflict",
+      "severity": "high",
+      "subject": "数据迁移服务",
+      "title": "「数据迁移服务」的「单次价格」在不同来源中取值不一致：950 与 800",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G4",
+      "fp_category": null,
+      "note": "数据迁移服务直营800/经销950跨源当前冲突，确需人工裁定"
+    },
+    {
+      "idx": 15,
+      "short_id": "e2b56e00",
+      "type": "confirmed_stale",
+      "severity": "high",
+      "subject": "ACME CRM Enterprise",
+      "title": "「ACME CRM Enterprise」的「月单价」已过期，不应再被 AI 引用",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G3",
+      "fp_category": null,
+      "note": "2025价目Enterprise 299被2026取代"
+    },
+    {
+      "idx": 16,
+      "short_id": "1f339e72",
+      "type": "duplicate",
+      "severity": "warning",
+      "subject": "星云科技客服中心",
+      "title": "「星云科技客服中心」与「星云科技客服中心（高新分部）」疑似是同一个对象",
+      "verdict": "confirmed",
+      "actionable": false,
+      "gt": "G8",
+      "fp_category": null,
+      "note": "星云两名录确为同一对象（城市西安一致）；但与idx27/30是同一实体对的重复卡片，合并只需一次操作"
+    },
+    {
+      "idx": 17,
+      "short_id": "2576f0be",
+      "type": "possibly_stale",
+      "severity": "warning",
+      "subject": "同一客户年度内累计定制实施超过 20 人天的部分",
+      "title": "「同一客户年度内累计定制实施超过 20 人天的部分」的「结算价格」长期未复核，可能已经过期（已 278 天未复核）",
+      "verdict": "false_alarm",
+      "actionable": false,
+      "gt": null,
+      "fp_category": "age_only_pricing_threshold",
+      "note": "实施服务费为2026现行年费标准、无失效/取代信号；因目录归pricing套用90天钟，278天即触发现行知识的年龄误报"
+    },
+    {
+      "idx": 18,
+      "short_id": "308fd5a0",
+      "type": "possibly_stale",
+      "severity": "warning",
+      "subject": "试用期",
+      "title": "「试用期」的「执行依据」长期未复核，可能已经过期（已 468 天未复核）",
+      "verdict": "false_alarm",
+      "actionable": false,
+      "gt": null,
+      "fp_category": "age_only_evergreen_policy",
+      "note": "2025现行手册“试用期按劳动法执行”属长效条款，468天年龄触发，仍现行有效"
+    },
+    {
+      "idx": 19,
+      "short_id": "364eecf3",
+      "type": "possibly_stale",
+      "severity": "warning",
+      "subject": "员工",
+      "title": "「员工」的「应服从」长期未复核，可能已经过期（已 468 天未复核）",
+      "verdict": "false_alarm",
+      "actionable": false,
+      "gt": null,
+      "fp_category": "age_only_evergreen_policy",
+      "note": "现行手册“服从合理工作安排”为长效行为规范，不因发布超365天而过期"
+    },
+    {
+      "idx": 20,
+      "short_id": "3bd41bdf",
+      "type": "possibly_stale",
+      "severity": "warning",
+      "subject": "定制实施服务",
+      "title": "「定制实施服务」的「按人天计费」长期未复核，可能已经过期（已 278 天未复核）",
+      "verdict": "false_alarm",
+      "actionable": false,
+      "gt": null,
+      "fp_category": "age_only_pricing_threshold",
+      "note": "定制实施1500/人天为2026现行标准，仅年龄触发，无变更证据"
+    },
+    {
+      "idx": 21,
+      "short_id": "45af246e",
+      "type": "possibly_stale",
+      "severity": "warning",
+      "subject": "标准实施服务",
+      "title": "「标准实施服务」的「固定收费」长期未复核，可能已经过期（已 278 天未复核）",
+      "verdict": "false_alarm",
+      "actionable": false,
+      "gt": null,
+      "fp_category": "age_only_pricing_threshold",
+      "note": "标准实施6000元为2026现行固定收费，仅年龄触发"
+    },
+    {
+      "idx": 22,
+      "short_id": "516a0655",
+      "type": "possibly_stale",
+      "severity": "warning",
+      "subject": "员工",
+      "title": "「员工」的「应遵守」长期未复核，可能已经过期（已 468 天未复核）",
+      "verdict": "false_alarm",
+      "actionable": false,
+      "gt": null,
+      "fp_category": "age_only_evergreen_policy",
+      "note": "现行手册职业道德条款，长效、现行"
+    },
+    {
+      "idx": 23,
+      "short_id": "672275ef",
+      "type": "possibly_stale",
+      "severity": "warning",
+      "subject": "延保服务",
+      "title": "「延保服务」的「促销价」长期未复核，可能已经过期（已 127 天未复核）",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G7",
+      "fp_category": null,
+      "note": "2026Q2限时促销延保99元，扫描时已Q4，促销确应结束，疑似过期成立"
+    },
+    {
+      "idx": 24,
+      "short_id": "7b2c7202",
+      "type": "possibly_stale",
+      "severity": "warning",
+      "subject": "员工",
+      "title": "「员工」的「应保守」长期未复核，可能已经过期（已 468 天未复核）",
+      "verdict": "false_alarm",
+      "actionable": false,
+      "gt": null,
+      "fp_category": "age_only_evergreen_policy",
+      "note": "现行手册保密义务条款，长效、现行"
+    },
+    {
+      "idx": 25,
+      "short_id": "8fcf3247",
+      "type": "possibly_stale",
+      "severity": "warning",
+      "subject": "客户",
+      "title": "「客户」的「可享受」长期未复核，可能已经过期（已 127 天未复核）",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G7",
+      "fp_category": null,
+      "note": "同一Q2促销的免费巡检权益，促销已结束，AI不应再承诺"
+    },
+    {
+      "idx": 26,
+      "short_id": "91e7f329",
+      "type": "possibly_stale",
+      "severity": "warning",
+      "subject": "员工手册",
+      "title": "「员工手册」的「取代」长期未复核，可能已经过期（已 468 天未复核）",
+      "verdict": "false_alarm",
+      "actionable": false,
+      "gt": null,
+      "fp_category": "age_only_evergreen_policy",
+      "note": "“2025手册取代2023版”本身是长效事实，被抽取成普通事实后又因年龄报警"
+    },
+    {
+      "idx": 27,
+      "short_id": "951fccba",
+      "type": "duplicate",
+      "severity": "warning",
+      "subject": "星云科技客服中心",
+      "title": "「星云科技客服中心」与「星云科技客服中心（高新分部）」疑似是同一个对象",
+      "verdict": "confirmed",
+      "actionable": false,
+      "gt": "G8",
+      "fp_category": null,
+      "note": "坐席数50一致，同一重复实体对的冗余卡片（见idx30）"
+    },
+    {
+      "idx": 28,
+      "short_id": "96faafe8",
+      "type": "possibly_stale",
+      "severity": "warning",
+      "subject": "ACME CRM Pro",
+      "title": "「ACME CRM Pro」的「月单价」长期未复核，可能已经过期（已 278 天未复核）",
+      "verdict": "false_alarm",
+      "actionable": false,
+      "gt": null,
+      "fp_category": "age_only_pricing_threshold",
+      "note": "2026官方现行价目CRM Pro 149，无2027新版/无变更证据，90天钟对现行官方价目误报"
+    },
+    {
+      "idx": 29,
+      "short_id": "a28d83ec",
+      "type": "possibly_stale",
+      "severity": "warning",
+      "subject": "智能门禁X1",
+      "title": "「智能门禁X1」的「月单价」长期未复核，可能已经过期（已 278 天未复核）",
+      "verdict": "false_alarm",
+      "actionable": false,
+      "gt": null,
+      "fp_category": "age_only_pricing_threshold",
+      "note": "2026现行价目门禁X1 899，仅年龄触发"
+    },
+    {
+      "idx": 30,
+      "short_id": "e9cd4ad9",
+      "type": "duplicate",
+      "severity": "warning",
+      "subject": "星云科技客服中心（高新分部）",
+      "title": "「星云科技客服中心」与「星云科技客服中心（高新分部）」疑似是同一个对象",
+      "verdict": "confirmed",
+      "actionable": true,
+      "gt": "G8",
+      "fp_category": null,
+      "note": "客服热线029-88880001一致，强标识，确认重复建档，应合并（本实体对的唯一可执行卡片）"
+    },
+    {
+      "idx": 31,
+      "short_id": "fd26198e",
+      "type": "possibly_stale",
+      "severity": "warning",
+      "subject": "ACME CRM Enterprise",
+      "title": "「ACME CRM Enterprise」的「月单价」长期未复核，可能已经过期（已 278 天未复核）",
+      "verdict": "false_alarm",
+      "actionable": false,
+      "gt": null,
+      "fp_category": "age_only_pricing_threshold",
+      "note": "2026现行价目Enterprise 329，仅年龄触发"
+    }
+  ]
+}

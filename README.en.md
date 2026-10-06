@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-green)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-213%20passed-success)](#testing)
+[![Tests](https://img.shields.io/badge/tests-214%20passed-success)](#testing)
 
 Policies, price lists and product manuals keep being revised, but AI assistants
 often quote outdated versions: conflicting figures across documents, policies
@@ -266,6 +266,29 @@ End-to-end extraction quality is covered by the Ollama smoke test; the real-worl
 mixed with these offline metrics. When changing detector rules, add business-semantics
 positive / negative / ambiguous cases first, then adjust the rules.
 
+### End-to-end Human Confirmation Rate (HCR) baseline
+
+Beyond the offline Gate, we also run the **full real-LLM extraction + detection**
+pipeline over **24 synthetic semi-realistic documents** (with 8 deliberately planted
+problem scenarios), then manually judge each reported drift to quantify the end-to-end
+cost of LLM extraction. The corpus, the planted scenarios and the auditable
+labels/scoring artifacts live in [examples/eval_corpus](./examples/eval_corpus)
+(non-deterministic, requires a local Ollama, not a CI gate):
+
+| End-to-end metric (qwen2.5:7b, 2026-10-06) | Result |
+|---|---|
+| Overall HCR (human-confirmed) | **62.5% (20/32, threshold >60%)** |
+| conflict / superseded / duplicate HCR | **100%** |
+| confirmed_stale HCR | **91.7%** |
+| possibly_stale HCR | 15.4% (weak spot: age-only heuristics hit current price lists / evergreen clauses) |
+| Planted-scenario end-to-end recall | **8/8 (100%)** |
+
+This agrees with the offline Gate: the high-confidence deterministic verdicts are
+reliable; end-to-end noise is dominated by the age-based "possibly stale" heuristic and
+isolated LM date-extraction errors (e.g. treating a recurring "every June–August" window
+as an expiry date), which are tracked as tuning items. Reproduce with
+`scripts/e2e_eval.py`, then score against human labels with `scripts/e2e_score.py`.
+
 `eval` exit codes: `0` Gate passed, `1` Gate failed, `2` cases could not be loaded or
 an artifact could not be written.
 
@@ -282,7 +305,7 @@ $env:TRUTHLAYER_DATABASE_URL="postgresql+psycopg://..."
 .\.venv\Scripts\python -m pytest
 ```
 
-The suite currently contains **213 passing tests**: unit tests cover
+The suite currently contains **214 passing tests**: unit tests cover
 normalization/hashing/entity resolution/evidence validation, every decision
 branch and negative case of the four detectors, the CI threshold matrix and
 deterministic serialization / HTML escaping of the report DTO, evaluation
@@ -312,9 +335,10 @@ TruthLayer is currently in **Phase 0 (CLI edition)**, iterating in six sprints:
 - [x] Sprint 6: golden QA set (54 cases / 3 categories), P/R/F1/FPR metrics with dependency-free regression, `truthlayer eval`
 
 **The Phase 0 Gate for the deterministic core is passed** (golden set:
-Precision / Recall / F1 = 100%, FPR = 0%); the real-world Human Confirmation Rate
-(HCR) will be collected continuously in actual use. **The formal v0.1 release and
-tag will follow final Gate sign-off.** The current version is `0.0.1`
+Precision / Recall / F1 = 100%, FPR = 0%); the first real-LLM end-to-end run measured
+**HCR = 62.5% with 8/8 planted-scenario recall** (high-confidence types at 92–100%; the
+age-based "possibly stale" heuristic awaits tuning). **The final framing for the formal
+v0.1 release and tag is pending sign-off.** The current version is `0.0.1`
 (under active development).
 
 ## Contributing

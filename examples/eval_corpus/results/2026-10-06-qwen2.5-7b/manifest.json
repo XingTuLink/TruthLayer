@@ -1,0 +1,51 @@
+{
+  "run_at": "2026-10-06T08:45:31.102722+00:00",
+  "workspace": "eval-corpus-20261006-164342",
+  "corpus": "examples\\eval_corpus",
+  "llm_model": "qwen2.5:7b",
+  "embedder_model": "bge-m3",
+  "prompt_version": "fact-extract-v1",
+  "tool_version": "0.0.1",
+  "detector_version": "detectors-v1",
+  "documents_parsed": 24,
+  "documents_failed": 0,
+  "chunks_processed": 24,
+  "chunks_failed": 2,
+  "extraction_errors": [
+    {
+      "chunk": "考勤管理办法.md#chunk0",
+      "error": "LLM structured output failed on every fallback tier:\n- json_schema: schema validation failed: 2 validation errors for ExtractionEnvelope\nfacts.1\n  Value error, exactly one of object_entity / object_value must be set [type=value_error, input_value={'subject': '员工', 'pr..., 'object_entity': None}, inp"
+    },
+    {
+      "chunk": "休假政策.md#chunk0",
+      "error": "number object must be JSON number, got str"
+    },
+    {
+      "chunk": "员工手册_2025.md#chunk0",
+      "error": "date object must be a YYYY-MM-DD string"
+    },
+    {
+      "chunk": "保密与信息安全制度.md#chunk0",
+      "error": "LLM structured output failed on every fallback tier:\n- json_schema: schema validation failed: 2 validation errors for ExtractionEnvelope\nfacts.1\n  Value error, exactly one of object_entity / object_value must be set [type=value_error, input_value={'subject': '办公电脑...: None, 'confidence': 1}, input_t"
+    }
+  ],
+  "entities_total": 59,
+  "facts_total": 90,
+  "drifts_reported": 32,
+  "new_this_scan": 32,
+  "open_by_type": {
+    "conflict": 1,
+    "possibly_stale": 13,
+    "confirmed_stale": 12,
+    "superseded": 3,
+    "duplicate": 3
+  },
+  "by_severity": {
+    "warning": 16,
+    "medium": 0,
+    "high": 9,
+    "critical": 7
+  },
+  "knowledge_hash": "d96006d8ec8ee92170c10c1dc09474ae6299100da0a169c30711370940c067ca",
+  "notes": "Non-deterministic real-LLM run; not a CI gate."
+}
