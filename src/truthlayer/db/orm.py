@@ -288,6 +288,12 @@ class Fact(_Timestamps, Base):
         JSONB(none_as_null=True), nullable=True
     )
     object_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Structured measure anchors (migration 0002, fact-extract-v5): populated
+    # only when object_type='number'. Null on pre-v5 rows; additive and not
+    # part of drift fingerprints yet (attribute-resolution phase 1 step 1).
+    measure_unit: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    tax_basis: Mapped[str | None] = mapped_column(String(16), nullable=True)
     valid_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
     observed_at: Mapped[datetime | None] = mapped_column(

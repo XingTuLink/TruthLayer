@@ -220,6 +220,9 @@ def main() -> int:
                     else f.object_value
                 ),
                 "object_type": f.object_type or "entity",
+                "unit": f.measure_unit,
+                "currency": f.currency,
+                "tax_basis": f.tax_basis,
                 "valid_from": str(f.valid_from) if f.valid_from else None,
                 "valid_to": str(f.valid_to) if f.valid_to else None,
                 "observed_at": (

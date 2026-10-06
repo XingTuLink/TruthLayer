@@ -92,3 +92,76 @@ def test_empty_envelope_is_valid() -> None:
     envelope = ExtractionEnvelope()
     assert envelope.entities == []
     assert envelope.facts == []
+
+
+# --- structured measure anchors (fact-extract-v5) --------------------------
+
+
+def test_measure_anchors_accepted_for_number() -> None:
+    fact = _scalar_fact(
+        predicate="渠道结算价",
+        object_value=22800,
+        unit=" 元/年·企业 ",
+        currency="cny",
+        tax_basis="inclusive",
+    )
+    assert fact.unit == "元/年·企业"
+    assert fact.currency == "CNY"  # normalized upper-case
+    assert fact.tax_basis == "inclusive"
+
+
+def test_non_monetary_measure_needs_no_currency() -> None:
+    fact = _scalar_fact(
+        predicate="年休假",
+        object_value=10,
+        unit="天",
+    )
+    assert fact.unit == "天"
+    assert fact.currency is None
+    assert fact.tax_basis is None
+
+
+def test_tax_basis_unknown_when_unspecified() -> None:
+    fact = _scalar_fact(
+        predicate="单价", object_value=100, unit="元/套", tax_basis="unknown"
+    )
+    assert fact.tax_basis == "unknown"
+
+
+def test_measure_anchors_default_none() -> None:
+    fact = _scalar_fact()
+    assert fact.unit is None
+    assert fact.currency is None
+    assert fact.tax_basis is None
+
+
+def test_measure_anchors_rejected_for_entity_object() -> None:
+    with pytest.raises(ValidationError):
+        RawFact(
+            subject="A",
+            predicate="p",
+            object_entity="B",
+            unit="元/套",
+            quote="q",
+        )
+
+
+def test_measure_anchors_rejected_for_non_number_scalar() -> None:
+    with pytest.raises(ValidationError):
+        _scalar_fact(
+            object_value="座区制",
+            object_type="string",
+            unit="人",
+        )
+
+
+def test_currency_without_unit_rejected() -> None:
+    with pytest.raises(ValidationError):
+        _scalar_fact(currency="CNY")
+
+
+def test_blank_unit_rejected_and_tax_basis_enforced() -> None:
+    with pytest.raises(ValidationError):
+        _scalar_fact(unit="   ")
+    with pytest.raises(ValidationError):
+        _scalar_fact(unit="元/套", tax_basis="before_tax")  # not a literal value

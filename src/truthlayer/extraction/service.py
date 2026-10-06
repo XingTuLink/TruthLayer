@@ -72,6 +72,8 @@ class ExtractionResult:
     facts_new: int = 0
     facts_total: int = 0
     entities_total: int = 0
+    # Facts persisted with a structured measure unit (fact-extract-v5+).
+    facts_with_measure: int = 0
     review_dates_propagated: int = 0
     chunk_embeddings: int = 0
     entity_embeddings: int = 0
@@ -503,6 +505,9 @@ class KnowledgeExtractionService:
                 object_entity_id=object_entity_id,
                 object_value=object_value,
                 object_type=object_type.value if object_type else None,
+                measure_unit=raw_fact.unit,
+                currency=raw_fact.currency,
+                tax_basis=raw_fact.tax_basis,
                 valid_from=valid_from,
                 valid_to=valid_to,
                 observed_at=observed_at,
@@ -519,6 +524,8 @@ class KnowledgeExtractionService:
             self.session.add(candidate)
             self.session.flush()
             result.facts_new += 1
+            if raw_fact.unit is not None:
+                result.facts_with_measure += 1
         except (DomainValidationError, ValueError) as exc:
             result.errors.append((label, str(exc)))
 

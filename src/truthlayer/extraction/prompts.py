@@ -6,7 +6,7 @@ reproducible/auditable (#15). Changing the prompt MUST bump PROMPT_VERSION.
 
 from __future__ import annotations
 
-PROMPT_VERSION = "fact-extract-v4"
+PROMPT_VERSION = "fact-extract-v5"
 
 SYSTEM_PROMPT = """\
 你是企业知识事实抽取器。你的输出只是候选，系统会做确定性校验。
@@ -17,7 +17,17 @@ SYSTEM_PROMPT = """\
 3. 宾语二选一：另一个实体（object_entity，给出其实体名）或标量值
    （object_value + object_type，类型为 string/number/date/boolean 之一）。
 4. 数字用 JSON number；日期用 YYYY-MM-DD 字符串；布尔用 true/false。
-   价格/金额只抽取数值，单位（如"元/月"）放进谓词或字符串宾语中。
+   度量类事实（价格、金额、时长、天数、人数、比例、数量等）必须把数值与口径拆开：
+   - object_value 只放纯数值（JSON number），例如 23800、5、24；
+   - unit 放计量单位原文，例如"元/年·企业""元/人天""人天""小时""天""%""套""次"；
+   - currency 仅在是货币时填写 ISO 三字母代码（人民币→CNY，美元→USD）；
+   - tax_basis 仅在是货币价格时填写：含税="inclusive"、不含税="exclusive"、
+     原文未说明="unknown"；非货币度量留空 null；
+   - predicate 只写纯属性名，严禁再把单位、币种、"含税/不含税"、年份等口径
+     拼进谓词。例：列头"渠道结算价（元/年·企业，含税）"→ predicate="渠道结算价"、
+     object_value=22800、unit="元/年·企业"、currency="CNY"、tax_basis="inclusive"；
+     "5人天起订"→ predicate="起订量"、object_value=5、unit="人天"。
+   - 编号、版本号等非度量数字按 string 抽取，不要填 unit/currency/tax_basis。
 5. 事实中出现的每个实体都必须列入 entities。实体 type 尽量取自受控词表：
    org（组织/公司/部门）、customer（客户）、person（人物/角色）、
    product（可售卖的产品或服务；难以区分“产品”与“服务”时统一用 product）、

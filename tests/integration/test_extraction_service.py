@@ -114,6 +114,9 @@ class FakeLLM:
                     predicate="list_price",
                     object_value=329,
                     object_type="number",
+                    unit="元/月",
+                    currency="CNY",
+                    tax_basis="exclusive",
                     quote="ACME CRM Enterprise 每用户每月 329 元",
                 )
             ]
@@ -327,10 +330,23 @@ def test_new_document_changes_knowledge_hash(
 
     assert second.facts_new == 1
     assert second.facts_total == 5
+    assert second.facts_with_measure == 1
     assert second.chunk_embeddings == 1  # only the new chunk
     assert second.entity_embeddings == 1  # only the new entity
     assert second.knowledge_hash != first.knowledge_hash
     assert session.scalar(select(func.count()).select_from(Fact)) == 5
+
+    # Structured measure anchors (fact-extract-v5) persist as columns, not
+    # predicate text; pre-v5 facts in the same workspace stay NULL.
+    enterprise = session.scalars(
+        select(Fact).where(Fact.predicate == "list_price")
+    ).all()
+    measured = {f.object_value: f for f in enterprise}
+    assert measured[329].measure_unit == "元/月"
+    assert measured[329].currency == "CNY"
+    assert measured[329].tax_basis == "exclusive"
+    assert measured[149].measure_unit is None
+    assert measured[149].currency is None
 
 
 class FlakyLLM(FakeLLM):

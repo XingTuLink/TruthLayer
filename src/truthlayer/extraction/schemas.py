@@ -22,6 +22,10 @@ IsoDate = Annotated[
     ),
 ]
 ScalarObjectType = Literal["string", "number", "date", "boolean"]
+# Tax treatment for monetary measures. ``unknown`` means the source text did
+# not state whether the price includes tax; it is kept distinct from a missing
+# value so downstream comparators treat it as "cannot compare tax basis".
+TaxBasis = Literal["inclusive", "exclusive", "unknown"]
 
 
 class RawEntity(BaseModel):
@@ -53,13 +57,21 @@ class RawFact(BaseModel):
     object_entity: NonBlank | None = None
     object_value: str | int | float | bool | None = None
     object_type: ScalarObjectType | None = None
+    # Structured measure anchors (attribute-resolution design §12 phase 1):
+    # when the scalar is a measurable quantity, its unit / currency / tax
+    # treatment live here instead of being jammed into predicate text, so
+    # downstream comparators read fields instead of regex-scraping Chinese
+    # strings. Allowed ONLY for object_type == "number".
+    unit: NonBlank | None = None
+    currency: NonBlank | None = None
+    tax_basis: TaxBasis | None = None
     valid_from: IsoDate | None = None
     valid_to: IsoDate | None = None
     observed_at: IsoDate | None = None
     quote: NonBlank
     confidence: float = Field(default=0.7, ge=0.0, le=1.0)
 
-    @field_validator("subject", "predicate", "object_entity", "quote")
+    @field_validator("subject", "predicate", "object_entity", "quote", "unit")
     @classmethod
     def _strip_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -68,6 +80,16 @@ class RawFact(BaseModel):
         if not stripped:
             raise ValueError("must not be blank")
         return stripped
+
+    @field_validator("currency")
+    @classmethod
+    def _normalize_currency(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        code = value.strip().upper()
+        if not code:
+            raise ValueError("must not be blank")
+        return code
 
     @model_validator(mode="after")
     def _xor_object(self) -> "RawFact":
@@ -84,6 +106,25 @@ class RawFact(BaseModel):
         if has_value and self.object_type is None:
             raise ValueError(
                 "object_type is required when object_value is a scalar"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _measure_fields_require_number(self) -> "RawFact":
+        measure_fields = (self.unit, self.currency, self.tax_basis)
+        if any(field is not None for field in measure_fields):
+            if self.object_entity is not None or self.object_type != "number":
+                raise ValueError(
+                    "unit / currency / tax_basis are measure anchors and "
+                    "require object_type='number' (got entity reference or "
+                    f"object_type={self.object_type!r})"
+                )
+        # Currency without a pricing unit is almost certainly a mislabelled
+        # free-text field; require the two to travel together for money.
+        if self.currency is not None and self.unit is None:
+            raise ValueError(
+                "currency requires unit (e.g. '元/人天'); put non-monetary "
+                "measurements in unit alone"
             )
         return self
 
