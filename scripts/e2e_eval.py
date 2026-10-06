@@ -53,7 +53,7 @@ try:
 
     TOOL_VERSION = _pkg_version("truthlayer")
 except Exception:  # noqa: BLE001 - fallback for source checkouts
-    TOOL_VERSION = "0.0.1"
+    TOOL_VERSION = "0.1.0"
 
 DETECTOR_VERSION = "detectors-v1"
 

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "truthlayer"
-version = "0.0.1"
+version = "0.1.0"
 description = "AI Knowledge Reliability Layer — Continuous QA for the knowledge your AI depends on."
 requires-python = ">=3.11"
 license = { text = "AGPL-3.0-only" }

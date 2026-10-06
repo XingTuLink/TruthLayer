@@ -367,8 +367,8 @@ Precision / Recall / F1 = 100%, FPR = 0%, and this 100/0 held across every real-
 end-to-end run). Real-LLM end-to-end HCR evolved over three runs (qwen2.5:7b v1 62.5% /
 8-of-8 recall → v3 100% / 6-of-8 → online deepseek-flash 89.7% / 7-of-8), confirming the
 end-to-end weak spot is non-determinism in LLM entity-identity and date extraction, now
-mapped to the R6/R8 backlog. **The final framing for the formal v0.1 release and tag is
-pending sign-off.** The current version is `0.0.1` (under active development).
+mapped to the R6/R8 backlog. **The first release, v0.1.0 (a CLI-first experimental
+edition), is published.** The current version is `0.1.0`.
 
 ## Contributing
 
