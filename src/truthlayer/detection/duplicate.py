@@ -33,7 +33,12 @@ from truthlayer.detection.scoring import (
     STRUCTURAL_CONFIDENCE,
     ai_impact_for,
 )
-from truthlayer.detection.state import EntityView, FactView, KnowledgeState
+from truthlayer.detection.state import (
+    EntityView,
+    FactView,
+    KnowledgeState,
+    version_chain_map,
+)
 from truthlayer.domain.enums import DriftType, Severity, TargetType
 
 NAME = "duplicate_detector"
@@ -114,6 +119,7 @@ class DuplicateDetector:
 
         candidates: list[DriftCandidate] = []
         seen_pairs: set[tuple] = set()
+        chain_map = version_chain_map(state.documents)
         for entity_a, entity_b in combinations(
             sorted(state.entities, key=lambda e: str(e.id)), 2
         ):
@@ -127,6 +133,7 @@ class DuplicateDetector:
                 facts_by_subject.get(entity_b.id, []),
                 recall,
                 holders,
+                chain_map,
             )
             for candidate in pair_candidates:
                 dedupe = tuple(sorted(candidate.fingerprint_key[1:]))
@@ -156,6 +163,7 @@ class DuplicateDetector:
         facts_b: list[FactView],
         recall: str,
         holders: dict[tuple, set],
+        chain_map: dict,
     ) -> list[DriftCandidate]:
         confidence = (
             STRUCTURAL_CONFIDENCE
@@ -187,6 +195,22 @@ class DuplicateDetector:
 
         if not shared:
             return []
+
+        # Version-chain suppression: when every shared fact sits inside one
+        # explicit version chain (e.g. "handbook 2023" vs "handbook 2025"),
+        # the two "entities" are editions of one document, not two records of
+        # one entity. Documents outside any declared chain (standalone
+        # registries) are unaffected, so genuinely duplicated records still
+        # report.
+        shared_docs = set()
+        for fact_a, fact_b in shared:
+            for fact in (fact_a, fact_b):
+                if fact.document_id is not None:
+                    shared_docs.add(fact.document_id)
+        if len(shared_docs) >= 2:
+            chains = {chain_map.get(doc_id) for doc_id in shared_docs}
+            if None not in chains and len(chains) == 1:
+                return []
 
         # Confirmation requires either >=2 shared facts, or exactly one
         # identifying fact held by no other entity in the knowledge base.

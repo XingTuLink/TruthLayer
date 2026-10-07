@@ -190,3 +190,83 @@ def test_cosine_helper():
     assert cosine_similarity((1.0, 0.0), (1.0, 0.0)) == 1.0
     assert cosine_similarity((1.0, 0.0), (0.0, 1.0)) == 0.0
     assert cosine_similarity((1.0,), (1.0, 2.0)) == 0.0
+
+
+def test_same_version_chain_via_group_not_duplicate(context):
+    # Two editions of one handbook each created an entity name; the shared
+    # fact only ever comes from documents on the same explicit chain.
+    state = build_state(
+        [
+            make_fact(
+                "a", subject="员工手册（2023版）", value="人力资源部",
+                predicate="解释和修订部门", object_type="string",
+                document="manual_2023.docx",
+            ),
+            make_fact(
+                "b", subject="员工手册（2025版）", value="人力资源部",
+                predicate="解释和修订部门", object_type="string",
+                document="manual_2025.docx",
+            ),
+        ],
+        documents=[
+            make_document("manual_2023.docx", group="handbook"),
+            make_document("manual_2025.docx", group="handbook"),
+        ],
+        extra_entities=[
+            make_entity("员工手册（2023版）", embedding=(1.0, 0.0)),
+            make_entity("员工手册（2025版）", embedding=(1.0, 0.0)),
+        ],
+    )
+    assert DuplicateDetector().detect(state, context) == []
+
+
+def test_same_version_chain_via_supersedes_not_duplicate(context):
+    state = build_state(
+        [
+            make_fact(
+                "a", subject="价目表（2025版）", value=True,
+                predicate="报价含税", object_type="boolean",
+                document="price_2025.xlsx",
+            ),
+            make_fact(
+                "b", subject="价目表（2026版）", value=True,
+                predicate="报价含税", object_type="boolean",
+                document="price_2026.xlsx",
+            ),
+        ],
+        documents=[
+            make_document("price_2025.xlsx"),
+            make_document("price_2026.xlsx", supersedes="price_2025.xlsx"),
+        ],
+        extra_entities=[
+            make_entity("价目表（2025版）", embedding=(1.0, 0.0)),
+            make_entity("价目表（2026版）", embedding=(1.0, 0.0)),
+        ],
+    )
+    assert DuplicateDetector().detect(state, context) == []
+
+
+def test_standalone_documents_still_duplicate(context):
+    # Registry files declare no version relation; the same entity entered in
+    # both must still report as a duplicate.
+    state = build_state(
+        [
+            make_fact(
+                "a", subject="云启信息客服中心", value="029-88651200",
+                predicate="联系电话", object_type="string",
+                document="registry_a.xlsx",
+            ),
+            make_fact(
+                "b", subject="云启信息客服中心（高新分部）", value="029-88651200",
+                predicate="联系电话", object_type="string",
+                document="registry_b.xlsx",
+            ),
+        ],
+        documents=[
+            make_document("registry_a.xlsx"),
+            make_document("registry_b.xlsx"),
+        ],
+    )
+    results = DuplicateDetector().detect(state, context)
+    assert len(results) == 1
+    assert results[0].drift_type is DriftType.DUPLICATE

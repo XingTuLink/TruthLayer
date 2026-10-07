@@ -64,6 +64,43 @@ class FactView:
         return self.observed_at or self.valid_from
 
 
+def version_chain_map(
+    documents: dict[uuid.UUID, DocumentView],
+) -> dict[uuid.UUID, uuid.UUID]:
+    """Map every document id to a representative of its explicit version chain.
+
+    Documents join a chain only through explicit declarations: a
+    ``previous_version_id`` link (followed transitively) or a shared non-null
+    ``group_id``. Nothing is inferred from dates, filenames or labels. A
+    document that declares no such relation maps to itself.
+    """
+    parent: dict[uuid.UUID, uuid.UUID] = {doc_id: doc_id for doc_id in documents}
+
+    def find(x: uuid.UUID) -> uuid.UUID:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: uuid.UUID, b: uuid.UUID) -> None:
+        ra, rb = find(a), find(b)
+        if ra == rb:
+            return
+        lo, hi = sorted((ra, rb), key=str)
+        parent[hi] = lo
+
+    for doc in documents.values():
+        if doc.previous_version_id is not None:
+            if doc.previous_version_id in parent:
+                union(doc.id, doc.previous_version_id)
+        if doc.group_id is not None:
+            for other in documents.values():
+                if other.id != doc.id and other.group_id == doc.group_id:
+                    union(doc.id, other.id)
+
+    return {doc_id: find(doc_id) for doc_id in documents}
+
+
 @dataclass(frozen=True)
 class KnowledgeState:
     workspace_id: uuid.UUID

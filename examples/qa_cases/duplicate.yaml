@@ -92,6 +92,21 @@ cases:
     expected_drifts:
       - {type: duplicate, predicate: managed_by, severity: warning}
 
+  - id: duplicate_standalone_registries_still_report
+    title: 两份无版本关系的名册登记同一联系方式，仍判为重复（版本链抑制不误伤真重复）
+    category: positive
+    documents:
+      - {id: reg_a, filename: 服务商名册_A.xlsx, source_type: crm}
+      - {id: reg_b, filename: 服务商名册_B.xlsx, source_type: crm}
+    entities:
+      - {id: a, name: "云启信息客服中心", type: org}
+      - {id: b, name: "云启信息客服中心（高新分部）", type: org}
+    facts:
+      - {id: f1, subject: a, predicate: 联系电话, value: "029-88651200", value_type: string, source: reg_a}
+      - {id: f2, subject: b, predicate: 联系电话, value: "029-88651200", value_type: string, source: reg_b}
+    expected_drifts:
+      - {type: duplicate, predicate: 联系电话, severity: warning}
+
   # ---- Negative：不构成重复 ----------------------------------------------
   - id: duplicate_neg_no_recall_despite_shared
     title: 名字与向量都不召回，即便恰好共享一条事实也不判重
@@ -225,4 +240,18 @@ cases:
     facts:
       - {id: f1, subject: a, predicate: managed_by, value_type: entity, object_entity: m, source: d1}
       - {id: f2, subject: b, predicate: managed_by, value: "王武", value_type: string, source: d1}
+    expected_drifts: []
+
+  - id: duplicate_amb_same_version_chain
+    title: 同一手册两个版本各建一个实体，共享事实只来自同一条显式版本链，不判重
+    category: ambiguous_negative
+    documents:
+      - {id: v_old, filename: 员工手册_2023版.docx, source_type: policy, group: handbook}
+      - {id: v_new, filename: 员工手册_2025版.docx, source_type: policy, group: handbook}
+    entities:
+      - {id: a, name: "员工手册（2023版）", type: policy, embedding: [1.0, 0.0]}
+      - {id: b, name: "员工手册（2025版）", type: policy, embedding: [1.0, 0.0]}
+    facts:
+      - {id: f1, subject: a, predicate: 解释和修订部门, value: "人力资源部", value_type: string, source: v_old}
+      - {id: f2, subject: b, predicate: 解释和修订部门, value: "人力资源部", value_type: string, source: v_new}
     expected_drifts: []
