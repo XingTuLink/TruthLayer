@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import date
 
 from truthlayer.attributes.anchors import normalize_dimension, normalize_number
 from truthlayer.attributes.model import AttributeResolution
@@ -54,6 +55,17 @@ DEFAULT_REUSED_SEVERITY = Severity.HIGH
 #: never block CI as deterministic confirmed_stale. None (pre-v6 rows) is
 #: trusted as before.
 REVIEW_ONLY_ANCHORS = frozenset({"document_scope", "calendar_derived"})
+
+#: Predicates of a document-level validity-END statement whose own object
+#: is the expiry date (e.g. "有效期至 / 有效期截止 / 失效日期: 2023-12-31").
+#: Start dates (生效/施行) and abolition notices naming ANOTHER edition
+#: ("原手册同时废止") are deliberately excluded. A document carrying an
+#: expired statement of this shape has declared itself no longer live, so
+#: R16 cannot treat its rows as a *current* document reusing a dead value:
+#: the value was current when the document was issued. The document-level
+#: invalidation statement backlog item will generalize this to target=doc.
+_VALIDITY_END_PREFIXES = ("有效期",)
+_VALIDITY_END_PREDICATES = frozenset({"失效日期", "截止日期", "到期日期"})
 
 
 @dataclass
@@ -298,6 +310,13 @@ class StaleDetector:
         context: DetectionContext,
     ) -> list[DriftCandidate]:
         candidates: list[DriftCandidate] = []
+        # Documents that declare their own expiry (evidence-anchored, already
+        # past as_of) are not live sources: a value written when the document
+        # was issued was current then, not a stale value copied today
+        # (run17: 2022 travel standard matched against the handbook chain).
+        expired_statement_docs = self._expired_statement_documents(
+            state, context.as_of
+        )
         for fact in state.facts:
             current_doc = state.fact_document(fact)
             if current_doc is None:
@@ -305,6 +324,8 @@ class StaleDetector:
             # The quoting document must itself be a *live* source: facts on
             # superseded editions are handled by confirmed_stale above.
             if state.newer_version_exists(current_doc.id):
+                continue
+            if current_doc.id in expired_statement_docs:
                 continue
             if not self._window_is_current(fact, context.as_of):
                 continue
@@ -371,6 +392,45 @@ class StaleDetector:
         if fact.valid_from is not None and fact.valid_from > as_of:
             return False
         return True
+
+    @staticmethod
+    def _is_expired_validity_statement(fact: FactView, as_of) -> bool:
+        """Whether a fact is the document's own expired validity-end claim.
+
+        Strict shape, model-free: the object is the expiry date itself (a
+        string ISO date equal to ``valid_to``), the predicate states a
+        validity end, expiry is evidence-anchored (quoted / legacy), and the
+        date is past. Business rows carry numbers as objects, so they can
+        never satisfy this shape.
+        """
+        if fact.valid_to is None or fact.valid_to >= as_of:
+            return False
+        if fact.valid_to_anchor in REVIEW_ONLY_ANCHORS:
+            return False
+        if fact.object_type != "string":
+            return False
+        predicate = (fact.predicate or "").strip().casefold()
+        if not (
+            predicate.startswith(_VALIDITY_END_PREFIXES)
+            or predicate in _VALIDITY_END_PREDICATES
+        ):
+            return False
+        try:
+            return date.fromisoformat(str(fact.object_value)) == fact.valid_to
+        except (ValueError, TypeError):
+            return False
+
+    def _expired_statement_documents(
+        self, state: KnowledgeState, as_of
+    ) -> set[uuid.UUID]:
+        expired: set[uuid.UUID] = set()
+        for fact in state.facts:
+            if not self._is_expired_validity_statement(fact, as_of):
+                continue
+            document = state.fact_document(fact)
+            if document is not None:
+                expired.add(document.id)
+        return expired
 
     def _match_superseded_reuse(
         self,

@@ -488,3 +488,28 @@ cases:
     expected_drifts:
       - {type: confirmed_stale, subject: p1, predicate: list_price, severity: medium, old_source: 价目表_2025.xlsx, new_source: 价目表_2026.xlsx}
       - {type: superseded, severity: medium, old_source: 价目表_2025.xlsx, new_source: 价目表_2026.xlsx}
+
+  - id: stale_reused_value_suppressed_when_document_declares_expiry
+    title: R16-19 引用文档自身带逐字锚定的已过期有效期声明时非现行源，不判沿用失效值（run17：2022 差旅标准 vs 手册链）
+    category: positive
+    as_of: 2026-10-06
+    documents:
+      - {id: d2021, filename: 员工手册_2021.docx, source_type: corporate, group: handbook}
+      - {id: d2025, filename: 员工手册_2025.docx, source_type: corporate, group: handbook, previous_version_of: d2021}
+      - {id: dstd, filename: 差旅标准_2022.pdf, source_type: corporate}
+    entities:
+      - {id: p1, name: 直辖市住宿上限, type: policy}
+      - {id: stdoc, name: 差旅标准（2022版）, type: policy}
+    facts:
+      # 链上旧版（显式被取代）与链头现值。
+      - {id: f_old, subject: p1, predicate: hotel_cap_cny, value: 350, value_type: number, source: d2021, measure_unit: "元/晚"}
+      - {id: f_head, subject: p1, predicate: hotel_cap_cny, value: 500, value_type: number, source: d2025, measure_unit: "元/晚"}
+      # 独立文档自己的有效期声明：逐字锚定、已过期（属不可变元数据，自身静默）。
+      - {id: f_stmt, subject: stdoc, predicate: 有效期至, value: "2023-12-31", value_type: string, source: dstd, valid_to: 2023-12-31, valid_to_anchor: quoted}
+      # 同一独立文档的行事实，开窗口、数值恰等于链上旧版——发布当时合法，不是抄死值。
+      # 跨谓词（差旅文件 vs 手册）与 run17 真实分流一致；R16 匹配只认主体+维度+数值。
+      - {id: f_biz, subject: p1, predicate: travel_lodging_cap, value: 350, value_type: number, source: dstd, valid_from: 2022-03-01, measure_unit: "元/晚"}
+    expected_drifts:
+      - {type: confirmed_stale, subject: p1, predicate: hotel_cap_cny, severity: medium, old_source: 员工手册_2021.docx, new_source: 员工手册_2025.docx}
+      - {type: superseded, severity: medium, old_source: 员工手册_2021.docx, new_source: 员工手册_2025.docx}
+      - {type: possibly_stale, subject: p1, predicate: travel_lodging_cap, severity: warning}

@@ -254,3 +254,151 @@ def test_silent_for_non_number_facts(context):
     state = build_state(facts, documents=_version_chain_docs())
 
     assert _reuse_candidates(state, context) == []
+
+
+# -- declaration gate: the quoting document declares its own expiry ---------
+
+
+def _declared_expiry_docs():
+    return [
+        make_document(
+            "handbook_2021.docx", group="handbook", source_type="corporate"
+        ),
+        make_document(
+            "handbook_2025.docx",
+            group="handbook",
+            supersedes="handbook_2021.docx",
+            source_type="corporate",
+        ),
+        make_document("travel_2022.pdf", source_type="corporate"),
+    ]
+
+
+def _declared_expiry_facts(
+    *,
+    stmt_predicate="有效期至",
+    stmt_value="2023-12-31",
+    stmt_valid_to=date(2023, 12, 31),
+    stmt_anchor="quoted",
+):
+    return [
+        make_fact(
+            "old",
+            subject=PRODUCT,
+            predicate="lodging_cap",
+            value=350,
+            measure_unit=UNIT_DAY,
+            document="handbook_2021.docx",
+        ),
+        make_fact(
+            "head",
+            subject=PRODUCT,
+            predicate="lodging_cap",
+            value=500,
+            measure_unit=UNIT_DAY,
+            document="handbook_2025.docx",
+        ),
+        make_fact(
+            "stmt",
+            subject="差旅标准2022版",
+            predicate=stmt_predicate,
+            value=stmt_value,
+            object_type="string",
+            document="travel_2022.pdf",
+            valid_to=stmt_valid_to,
+            valid_to_anchor=stmt_anchor,
+        ),
+        make_fact(
+            "biz",
+            subject=PRODUCT,
+            predicate="travel_lodging_cap",
+            value=350,
+            measure_unit=UNIT_DAY,
+            document="travel_2022.pdf",
+            valid_from=date(2022, 3, 1),
+        ),
+    ]
+
+
+def test_silent_when_document_declares_own_quoted_expiry(context):
+    """run17: a standalone expired standard matching a handbook chain value
+    is a legal-at-issue-time value, not a copied dead value."""
+    state = build_state(
+        _declared_expiry_facts(), documents=_declared_expiry_docs()
+    )
+
+    assert _reuse_candidates(state, context) == []
+
+
+def test_silent_when_expiry_statement_has_legacy_null_anchor(context):
+    """Pre-v6 rows carry no anchor; the expiry statement stays trusted."""
+    state = build_state(
+        _declared_expiry_facts(stmt_anchor=None),
+        documents=_declared_expiry_docs(),
+    )
+
+    assert _reuse_candidates(state, context) == []
+
+
+def test_flags_when_expiry_statement_anchor_not_evidence(context):
+    """An inferred (document_scope/calendar_derived) expiry is not a
+    declaration the detector may structurally trust."""
+    state = build_state(
+        _declared_expiry_facts(stmt_anchor="calendar_derived"),
+        documents=_declared_expiry_docs(),
+    )
+
+    hits = _reuse_candidates(state, context)
+    assert len(hits) == 1
+    assert hits[0].target_id == uid("fact:biz")
+
+
+def test_flags_when_declared_expiry_still_in_future(context):
+    state = build_state(
+        _declared_expiry_facts(
+            stmt_value="2027-12-31", stmt_valid_to=date(2027, 12, 31)
+        ),
+        documents=_declared_expiry_docs(),
+    )
+
+    hits = _reuse_candidates(state, context)
+    assert len(hits) == 1
+    assert hits[0].target_id == uid("fact:biz")
+
+
+def test_flags_when_statement_is_not_a_validity_end_claim(context):
+    # Start-date statements and arbitrary metadata must not silence R16.
+    state = build_state(
+        _declared_expiry_facts(
+            stmt_predicate="生效日期",
+            stmt_value="2022-03-01",
+            stmt_valid_to=date(2022, 3, 1),
+        ),
+        documents=_declared_expiry_docs(),
+    )
+
+    hits = _reuse_candidates(state, context)
+    assert len(hits) == 1
+    assert hits[0].target_id == uid("fact:biz")
+
+
+def test_flags_when_statement_lives_on_another_document(context):
+    """A quoted expiry statement on the chain's dead edition does not mark
+    the quoting document as expired — the statement travels with its doc."""
+    facts = _declared_expiry_facts()
+    facts[2] = make_fact(
+        "stmt",
+        subject="差旅标准2022版",
+        predicate="有效期至",
+        value="2023-12-31",
+        object_type="string",
+        document="handbook_2021.docx",
+        valid_to=date(2023, 12, 31),
+        valid_to_anchor="quoted",
+    )
+    state = build_state(facts, documents=_declared_expiry_docs())
+
+    hits = _reuse_candidates(state, context)
+    assert len(hits) == 1
+    assert hits[0].old_document_id == uid("doc:handbook_2021.docx")
+    assert hits[0].new_document_id == uid("doc:handbook_2025.docx")
