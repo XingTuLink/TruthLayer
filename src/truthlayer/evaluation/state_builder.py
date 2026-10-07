@@ -109,6 +109,7 @@ def build_world(case: QACase) -> CaseWorld:
                 valid_to=fact.valid_to,
                 observed_at=fact.observed_at,
                 confidence=0.9,
+                measure_unit=fact.measure_unit,
                 document_id=(
                     document_ids[fact.source] if fact.source is not None else None
                 ),

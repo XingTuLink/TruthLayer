@@ -28,6 +28,11 @@ _WHY = {
         "该事实已超过有效期，或其来源文档已被更新版本显式取代；继续引用会向用户传递"
         "已失效的政策、价格或规则。"
     ),
+    "reused_stale_value": (
+        "现行文档中的取值与一份已被显式取代的旧版文档逐字相同，而版本链最新版"
+        "已经改为另一个值；该来源很可能沿用了已失效的旧数据，AI 据此回答会向用户"
+        "传递过期的价格或标准。"
+    ),
     "possibly_stale": (
         "该事实超过配置的复核阈值后仍未见到更新来源，可能已经失效。当前仅有年龄信号、"
         "置信度较低，需要人工确认而非自动改判。"
@@ -52,6 +57,11 @@ _RECOMMEND = {
         "请打开更新版的来源文档，确认其中的替代取值并采纳为新的事实依据；"
         "若经核实旧规则仍然有效，保留原有记录即可。"
     ),
+    "reused_stale_value": (
+        "请核对版本链最新版文档中的现行取值，更正现行文档后重新扫描；"
+        "若经核实两个数值在该场景下本就并存（例如不同渠道、不同口径），"
+        "可标记为误报，系统会记住该判断。"
+    ),
     "possibly_stale": (
         "请业务负责人复核该来源文件：若确认仍有效，保留即可；"
         "若已更新，请采纳新值或推动修订文档；若无需继续跟踪，可标记为误报。"
@@ -75,6 +85,10 @@ _SUGGESTED = {
     "confirmed_stale": (
         ResolutionDecision.ACCEPT_NEWER.value,
         ResolutionDecision.KEEP_OLD.value,
+        ResolutionDecision.FALSE_POSITIVE.value,
+    ),
+    "reused_stale_value": (
+        ResolutionDecision.ACCEPT_NEWER.value,
         ResolutionDecision.FALSE_POSITIVE.value,
     ),
     "possibly_stale": (
@@ -120,6 +134,12 @@ def short_title(drift_type: str, detail: dict[str, Any]) -> str:
         )
     if drift_type == "confirmed_stale":
         return f"{head} 已确认过期 [{detail.get('reason')}]"
+    if drift_type == "reused_stale_value":
+        return (
+            f"{head} 逐字引用已失效值 {detail.get('reused_value')!s}"
+            f"（现行版应为 {detail.get('head_value')!s}；"
+            f"{detail.get('old_source')} → {detail.get('new_source')}）"
+        )
     if drift_type == "possibly_stale":
         age = detail.get("age_days")
         suffix = f"，已 {age} 天未复核" if age is not None else ""
@@ -156,6 +176,12 @@ def plain_title(drift_type: str, detail: dict[str, Any]) -> str:
         )
     if drift_type == "confirmed_stale":
         return f"「{subject}」的「{predicate}」已过期，不应再被 AI 引用"
+    if drift_type == "reused_stale_value":
+        return (
+            f"「{subject}」的「{predicate}」正在沿用已失效的旧值"
+            f"{detail.get('reused_value')!s}，版本链最新版已改为"
+            f"{detail.get('head_value')!s}"
+        )
     if drift_type == "possibly_stale":
         age = detail.get("age_days")
         suffix = f"（已 {age} 天未复核）" if age is not None else ""

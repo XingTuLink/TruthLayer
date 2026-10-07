@@ -280,6 +280,13 @@ def _describe_drift(item) -> str:
             f"{d.get('subject')} / {d.get('predicate')} "
             f"[{d.get('reason')}] ({d.get('source')})"
         )
+    if kind == "reused_stale_value":
+        return (
+            f"{d.get('subject')} / {d.get('predicate')}: "
+            f"{d.get('reused_value')!s} reused from {d.get('old_source')} "
+            f"(head {d.get('new_source')} = {d.get('head_value')!s}, "
+            f"quoted by {d.get('source')})"
+        )
     if kind == "superseded":
         return f"{d.get('old_source')} -> {d.get('new_source')}"
     if kind == "duplicate":
@@ -309,6 +316,7 @@ def _print_detection_summary(result: DetectionResult) -> None:
         f"conflict {counts['conflict']} | "
         f"possibly_stale {counts['possibly_stale']} | "
         f"confirmed_stale {counts['confirmed_stale']} | "
+        f"reused_stale_value {counts['reused_stale_value']} | "
         f"superseded {counts['superseded']} | "
         f"duplicate {counts['duplicate']}"
     )

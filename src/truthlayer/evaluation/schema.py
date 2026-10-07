@@ -89,6 +89,9 @@ class QAFact(BaseModel):
     valid_from: date | None = None
     valid_to: date | None = None
     observed_at: date | None = None
+    #: Structured measure anchor (fact-extract-v5+); R16 matches reused
+    #: values only within the same parsed measure dimension.
+    measure_unit: str | None = None
 
     @model_validator(mode="after")
     def _validate_object(self) -> "QAFact":

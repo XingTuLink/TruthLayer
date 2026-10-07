@@ -65,6 +65,10 @@ class DriftType(StrEnum):
     CONFLICT = "conflict"
     POSSIBLY_STALE = "possibly_stale"
     CONFIRMED_STALE = "confirmed_stale"
+    #: A currently-effective document quotes a value verbatim from an
+    #: explicitly superseded edition while the chain head carries a
+    #: different value (design 04 §11, rule R16).
+    REUSED_STALE_VALUE = "reused_stale_value"
     SUPERSEDED = "superseded"
     DUPLICATE = "duplicate"
 

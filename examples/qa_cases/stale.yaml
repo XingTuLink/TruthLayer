@@ -277,3 +277,106 @@ cases:
     facts:
       - {id: f1, subject: p1, predicate: daily_rate_cny, value: 1200, value_type: number, source: d1, valid_from: 2026-01-01}
     expected_drifts: []
+
+  # ---- R16：现行文档逐字复用已失效值（design 04 §11，确定性） -------------
+  - id: stale_reused_value_previous_edition
+    title: R16-14 现行经销单逐字采用上一版失效价且与链头现值不同，报引用失效值
+    category: positive
+    as_of: 2026-10-06
+    documents:
+      - {id: d2025, filename: 价目表_2025.xlsx, source_type: corporate, group: price}
+      - {id: d2026, filename: 价目表_2026.xlsx, source_type: corporate, group: price, previous_version_of: d2025}
+      - {id: dchannel, filename: 经销渠道报价单_2026H2.pdf, source_type: corporate}
+    entities:
+      - {id: p1, name: 云客服专业版, type: product}
+    facts:
+      - {id: f_old, subject: p1, predicate: list_price, value: 22800, value_type: number, source: d2025, valid_to: 2025-12-31, measure_unit: "元/年·企业"}
+      - {id: f_head, subject: p1, predicate: list_price, value: 23800, value_type: number, source: d2026, valid_from: 2026-01-01, measure_unit: "元/年·企业"}
+      - {id: f_cur, subject: p1, predicate: 渠道结算价, value: 22800, value_type: number, source: dchannel, valid_from: 2026-07-01, valid_to: 2026-12-31, measure_unit: "元/年·企业"}
+    expected_drifts:
+      - {type: reused_stale_value, subject: p1, predicate: 渠道结算价, severity: high, old_source: 价目表_2025.xlsx, new_source: 价目表_2026.xlsx}
+      - {type: confirmed_stale, subject: p1, predicate: list_price, severity: medium, old_source: 价目表_2025.xlsx, new_source: 价目表_2026.xlsx}
+      - {type: superseded, severity: medium, old_source: 价目表_2025.xlsx, new_source: 价目表_2026.xlsx}
+
+  - id: stale_reused_value_two_editions_back
+    title: R16-15 失效值来自链上更早两版（传递取代链），同样报引用失效值
+    category: positive
+    as_of: 2026-10-06
+    documents:
+      - {id: d2024, filename: 报价单_2024.pdf, source_type: corporate, group: price}
+      - {id: d2025, filename: 价目表_2025.xlsx, source_type: corporate, group: price, previous_version_of: d2024}
+      - {id: d2026, filename: 价目表_2026.xlsx, source_type: corporate, group: price, previous_version_of: d2025}
+      - {id: dchannel, filename: 经销渠道报价单_2026H2.pdf, source_type: corporate}
+    entities:
+      - {id: p1, name: 培训服务, type: product}
+    facts:
+      - {id: f_v1, subject: p1, predicate: list_price, value: 1200, value_type: number, source: d2024, valid_to: 2024-12-31, measure_unit: "元/人天"}
+      - {id: f_v2, subject: p1, predicate: list_price, value: 1500, value_type: number, source: d2025, valid_to: 2025-12-31, measure_unit: "元/人天"}
+      - {id: f_v3, subject: p1, predicate: list_price, value: 1500, value_type: number, source: d2026, valid_from: 2026-01-01, measure_unit: "元/人天"}
+      - {id: f_cur, subject: p1, predicate: 渠道结算价, value: 1200, value_type: number, source: dchannel, valid_from: 2026-07-01, valid_to: 2026-12-31, measure_unit: "元/人天"}
+    expected_drifts:
+      - {type: reused_stale_value, subject: p1, predicate: 渠道结算价, severity: high, old_source: 报价单_2024.pdf, new_source: 价目表_2026.xlsx}
+      - {type: confirmed_stale, subject: p1, predicate: list_price, severity: medium, old_source: 报价单_2024.pdf, new_source: 价目表_2025.xlsx}
+      - {type: confirmed_stale, subject: p1, predicate: list_price, severity: medium, old_source: 价目表_2025.xlsx, new_source: 价目表_2026.xlsx}
+      - {type: superseded, severity: medium, old_source: 报价单_2024.pdf, new_source: 价目表_2025.xlsx}
+      - {type: superseded, severity: medium, old_source: 价目表_2025.xlsx, new_source: 价目表_2026.xlsx}
+
+  - id: stale_reused_value_collision_subject_or_unit
+    title: R16-16 同值碰撞但主体不同或单位维度不同，不锚定则不报
+    category: positive
+    as_of: 2026-10-06
+    documents:
+      - {id: d2025, filename: 价目表_2025.xlsx, source_type: corporate, group: price}
+      - {id: d2026, filename: 价目表_2026.xlsx, source_type: corporate, group: price, previous_version_of: d2025}
+      - {id: dchannel, filename: 经销渠道报价单_2026H2.pdf, source_type: corporate}
+    entities:
+      - {id: p1, name: 云客服专业版, type: product}
+      - {id: p2, name: 外部培训, type: service}
+    facts:
+      - {id: f_old_a, subject: p1, predicate: list_price, value: 1200, value_type: number, source: d2025, valid_to: 2025-12-31, measure_unit: "元/年·企业"}
+      - {id: f_head_a, subject: p1, predicate: list_price, value: 1500, value_type: number, source: d2026, valid_from: 2026-01-01, measure_unit: "元/年·企业"}
+      - {id: f_cur_other_subject, subject: p2, predicate: 渠道结算价, value: 1200, value_type: number, source: dchannel, valid_from: 2026-07-01, valid_to: 2026-12-31, measure_unit: "元/次"}
+      - {id: f_cur_other_unit, subject: p1, predicate: 渠道结算价, value: 1200, value_type: number, source: dchannel, valid_from: 2026-07-01, valid_to: 2026-12-31, measure_unit: "元/人天"}
+    expected_drifts:
+      - {type: confirmed_stale, subject: p1, predicate: list_price, severity: medium, old_source: 价目表_2025.xlsx, new_source: 价目表_2026.xlsx}
+      - {type: superseded, severity: medium, old_source: 价目表_2025.xlsx, new_source: 价目表_2026.xlsx}
+
+  - id: stale_reused_value_flat_across_editions
+    title: R16-17 三版取值逐版相同（合法未涨价），现行文档同值不报
+    category: positive
+    as_of: 2026-10-06
+    documents:
+      - {id: d2024, filename: 报价单_2024.pdf, source_type: corporate, group: price}
+      - {id: d2025, filename: 价目表_2025.xlsx, source_type: corporate, group: price, previous_version_of: d2024}
+      - {id: d2026, filename: 价目表_2026.xlsx, source_type: corporate, group: price, previous_version_of: d2025}
+      - {id: dchannel, filename: 经销渠道报价单_2026H2.pdf, source_type: corporate}
+    entities:
+      - {id: p1, name: 培训服务, type: product}
+    facts:
+      - {id: f_v1, subject: p1, predicate: list_price, value: 1500, value_type: number, source: d2024, valid_to: 2024-12-31, measure_unit: "元/人天"}
+      - {id: f_v2, subject: p1, predicate: list_price, value: 1500, value_type: number, source: d2025, valid_to: 2025-12-31, measure_unit: "元/人天"}
+      - {id: f_v3, subject: p1, predicate: list_price, value: 1500, value_type: number, source: d2026, valid_from: 2026-01-01, measure_unit: "元/人天"}
+      - {id: f_cur, subject: p1, predicate: 渠道结算价, value: 1500, value_type: number, source: dchannel, valid_from: 2026-07-01, valid_to: 2026-12-31, measure_unit: "元/人天"}
+    expected_drifts:
+      - {type: confirmed_stale, subject: p1, predicate: list_price, severity: medium, old_source: 报价单_2024.pdf, new_source: 价目表_2025.xlsx}
+      - {type: confirmed_stale, subject: p1, predicate: list_price, severity: medium, old_source: 价目表_2025.xlsx, new_source: 价目表_2026.xlsx}
+      - {type: superseded, severity: medium, old_source: 报价单_2024.pdf, new_source: 价目表_2025.xlsx}
+      - {type: superseded, severity: medium, old_source: 价目表_2025.xlsx, new_source: 价目表_2026.xlsx}
+
+  - id: stale_reused_value_rewritten_not_caught
+    title: R16-18 旧值已被改写（1200→1199），链上逐字找不到旧值，本补充路径不抓
+    category: positive
+    as_of: 2026-10-06
+    documents:
+      - {id: d2025, filename: 价目表_2025.xlsx, source_type: corporate, group: price}
+      - {id: d2026, filename: 价目表_2026.xlsx, source_type: corporate, group: price, previous_version_of: d2025}
+      - {id: dchannel, filename: 经销渠道报价单_2026H2.pdf, source_type: corporate}
+    entities:
+      - {id: p1, name: 培训服务, type: product}
+    facts:
+      - {id: f_old, subject: p1, predicate: list_price, value: 1199, value_type: number, source: d2025, valid_to: 2025-12-31, measure_unit: "元/人天"}
+      - {id: f_head, subject: p1, predicate: list_price, value: 1199, value_type: number, source: d2026, valid_from: 2026-01-01, measure_unit: "元/人天"}
+      - {id: f_cur, subject: p1, predicate: 渠道结算价, value: 1200, value_type: number, source: dchannel, valid_from: 2026-07-01, valid_to: 2026-12-31, measure_unit: "元/人天"}
+    expected_drifts:
+      - {type: confirmed_stale, subject: p1, predicate: list_price, severity: medium, old_source: 价目表_2025.xlsx, new_source: 价目表_2026.xlsx}
+      - {type: superseded, severity: medium, old_source: 价目表_2025.xlsx, new_source: 价目表_2026.xlsx}

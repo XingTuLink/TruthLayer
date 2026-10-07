@@ -155,6 +155,7 @@ class ReportBuilder:
                     "conflict",
                     "possibly_stale",
                     "confirmed_stale",
+                    "reused_stale_value",
                     "superseded",
                     "duplicate",
                 )

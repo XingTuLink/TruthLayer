@@ -120,7 +120,7 @@
   {% set s = report.summary %}
   {% set sev_cn = {'critical':'严重', 'high':'高', 'medium':'中', 'warning':'警告'} %}
   {% set fail_cn = {'critical':'严重', 'high':'高', 'medium':'中', 'warning':'警告', 'none':'任意'} %}
-  {% set type_names = {'conflict':'知识冲突', 'confirmed_stale':'已过期', 'possibly_stale':'疑似过期', 'superseded':'文档被取代', 'duplicate':'实体重复'} %}
+  {% set type_names = {'conflict':'知识冲突', 'confirmed_stale':'已过期', 'reused_stale_value':'引用失效值', 'possibly_stale':'疑似过期', 'superseded':'文档被取代', 'duplicate':'实体重复'} %}
 
   <div class="brand">
     <div class="brand-left">
@@ -211,7 +211,7 @@
       </div>
 
       <h3 style="margin-top:18px;">问题类型分布</h3>
-      {% set type_order = ['confirmed_stale','possibly_stale','conflict','duplicate','superseded'] %}
+      {% set type_order = ['reused_stale_value','confirmed_stale','possibly_stale','conflict','duplicate','superseded'] %}
       {% for tkey in type_order %}
         {% set cnt = s.open_by_type.get(tkey, 0) %}
         {% if cnt %}
