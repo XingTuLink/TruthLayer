@@ -9,7 +9,12 @@ Three layers are kept strictly separate:
                         exists (deterministic, high confidence).
 
 Document old does NOT mean knowledge old: facts without any age signal
-(observed_at / valid_from) are never guessed stale.
+(observed_at / valid_from) are never guessed stale. Edition metadata does
+not mean knowledge drift either: immutable document-identity predicates
+(document numbers, edition labels, effective/repeal dates, authoring
+stamps, product codes) stay true about their own edition forever, so they
+never raise confirmed_stale or possibly_stale (configurable via
+``rules.immutable_metadata_predicates``).
 
 R16 (design 04 §11) adds one more deterministic, model-free path: a
 *current* document quotes a superseded edition's value verbatim while the
@@ -73,6 +78,12 @@ class StaleDetector:
     ) -> DriftCandidate | None:
         signals: list[str] = []
         newer_doc: DocumentView | None = None
+
+        # Immutable edition/identity metadata is historically true about its
+        # own document regardless of expiry or supersession — never a stale
+        # alert on either the deterministic or the age-only path.
+        if context.is_immutable_metadata(fact.predicate):
+            return None
 
         if fact.valid_to is not None and fact.valid_to < context.as_of:
             signals.append("valid_to_expired")

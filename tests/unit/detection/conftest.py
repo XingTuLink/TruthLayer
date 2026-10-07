@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from truthlayer.config import RulesConfig
 from truthlayer.detection.context import DetectionContext
 from truthlayer.detection.state import (
     DocumentView,
@@ -146,4 +147,8 @@ def context() -> DetectionContext:
             "policy_change": Severity.CRITICAL,
         },
         multi_valued_predicates=frozenset(),
+        immutable_metadata_predicates=frozenset(
+            p.strip().casefold()
+            for p in RulesConfig().immutable_metadata_predicates
+        ),
     )

@@ -17,6 +17,30 @@ from truthlayer.domain.errors import ConfigError
 AuthorityScore = Annotated[float, Field(ge=0.0, le=1.0)]
 CONFIG_FILENAME = ".truthlayer.yaml"
 
+#: Production default for ``rules.immutable_metadata_predicates``: predicates
+#: of document/version identity metadata whose statement remains true about
+#: its own edition forever, so expiry/supersession/age of that edition must
+#: never turn them into stale drift alerts (derived from run12 HCR).
+DEFAULT_IMMUTABLE_METADATA_PREDICATES: tuple[str, ...] = (
+    "文件编号",
+    "版本",
+    "产品编码",
+    "生效日期",
+    "施行日期",
+    "施行起始日",
+    "发布日期",
+    "制单日期",
+    "废止日期",
+    "有效期至",
+    "报价含税",
+    "制单部门",
+    "发布部门",
+    "编制部门",
+    "审核人",
+    "到期后执行版本",
+    "解释权归属",
+)
+
 
 class WorkspaceConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -40,6 +64,14 @@ class RulesConfig(BaseModel):
     # Predicates that are legitimately multi-valued (e.g. tiered benefits);
     # reserved escape hatch for future cardinality support (#19).
     multi_valued_predicates: list[str] = Field(default_factory=list)
+    # Predicates describing immutable document/version identity metadata
+    # (document numbers, edition labels, effective dates, authoring stamps,
+    # product codes, ...). Such facts stay true about their document forever;
+    # an expired or superseded edition must never make *them* drift alerts.
+    # Configurable because predicate vocabularies differ between deployments.
+    immutable_metadata_predicates: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_IMMUTABLE_METADATA_PREDICATES)
+    )
 
 
 class CIConfig(BaseModel):

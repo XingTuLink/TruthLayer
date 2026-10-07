@@ -132,6 +132,10 @@ def build_world(case: QACase) -> CaseWorld:
         multi_valued_predicates=frozenset(
             p.strip().casefold() for p in rules.multi_valued_predicates
         ),
+        immutable_metadata_predicates=frozenset(
+            p.strip().casefold()
+            for p in rules.immutable_metadata_predicates
+        ),
     )
 
     return CaseWorld(

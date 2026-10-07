@@ -21,6 +21,9 @@ class DetectionContext:
     severity_overrides: dict[str, Severity]
     #: Predicates explicitly allowed to carry multiple values at once (#19).
     multi_valued_predicates: frozenset[str]
+    #: Predicates of immutable document/version metadata that can never be a
+    #: stale drift (their statement stays true about its own edition forever).
+    immutable_metadata_predicates: frozenset[str] = frozenset()
 
     def severity_for_change(
         self, source_type: str, default: Severity
@@ -29,6 +32,9 @@ class DetectionContext:
 
     def is_multi_valued(self, predicate: str) -> bool:
         return predicate.strip().casefold() in self.multi_valued_predicates
+
+    def is_immutable_metadata(self, predicate: str) -> bool:
+        return predicate.strip().casefold() in self.immutable_metadata_predicates
 
     @classmethod
     def from_config(
@@ -43,5 +49,9 @@ class DetectionContext:
             severity_overrides=dict(config.severity),
             multi_valued_predicates=frozenset(
                 p.strip().casefold() for p in rules.multi_valued_predicates
+            ),
+            immutable_metadata_predicates=frozenset(
+                p.strip().casefold()
+                for p in rules.immutable_metadata_predicates
             ),
         )

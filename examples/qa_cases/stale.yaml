@@ -216,6 +216,47 @@ cases:
       - {id: f1, subject: b1, predicate: subsidy_cny, value: 200, value_type: number, source: d1, valid_to: 2026-06-01}
     expected_drifts: []
 
+  - id: stale_superseded_edition_only_metadata_emits_doc_card
+    title: 已废版本只剩不可变元数据时，仅出文档级 superseded 卡，不对事实报警
+    category: positive
+    as_of: 2026-10-06
+    documents:
+      - {id: dold, filename: 报价单_2024.pdf, source_type: corporate}
+      - {id: dnew, filename: 报价单_2026.pdf, source_type: corporate, previous_version_of: dold}
+    entities:
+      - {id: p1, name: 云客服专业版, type: product}
+    facts:
+      - {id: f_code, subject: p1, predicate: 产品编码, value: YKF-PRO-2024, value_type: string, source: dold}
+    expected_drifts:
+      - {type: superseded, severity: medium, old_source: 报价单_2024.pdf, new_source: 报价单_2026.pdf}
+
+  - id: stale_neg_metadata_aged_silent
+    title: 文件编号/生效日期等单据元事实超龄也不报 possibly_stale
+    category: negative
+    documents:
+      - {id: d1, filename: 服务SLA_2021.md, source_type: policy}
+    entities:
+      - {id: b1, name: 客户服务SLA, type: policy}
+    facts:
+      - {id: f1, subject: b1, predicate: 文件编号, value: SLA-2021-001, value_type: string, source: d1, observed_at: 2021-03-01}
+    expected_drifts: []
+
+  - id: stale_superseded_edition_metadata_silent_business_reports
+    title: 同一已废版本上元数据静默、业务条款照报（抑制互不连坐）
+    category: positive
+    as_of: 2026-10-06
+    documents:
+      - {id: dold, filename: 报价单_2024.pdf, source_type: corporate}
+      - {id: dnew, filename: 报价单_2026.pdf, source_type: corporate, previous_version_of: dold}
+    entities:
+      - {id: p1, name: 云客服专业版, type: product}
+    facts:
+      - {id: f_code, subject: p1, predicate: 产品编码, value: YKF-PRO-2024, value_type: string, source: dold}
+      - {id: f_price, subject: p1, predicate: list_price, value: 19800, value_type: number, source: dold}
+    expected_drifts:
+      - {type: confirmed_stale, subject: p1, predicate: list_price, severity: medium, old_source: 报价单_2024.pdf, new_source: 报价单_2026.pdf}
+      - {type: superseded, severity: medium, old_source: 报价单_2024.pdf, new_source: 报价单_2026.pdf}
+
   # ---- Ambiguous Negative：看似该报，实则不应报 --------------------------
   - id: stale_amb_old_document_fresh_fact
     title: 文档很旧但事实最近仍被观测，知识并未老化

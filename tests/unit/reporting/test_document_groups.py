@@ -180,7 +180,7 @@ def _report(groups, issues) -> ReportDTO:
             workspace_name="demo-kb",
             generated_at=_DETECTED,
             tool_version="0.0.1",
-            detector_version="drift-core-v2",
+            detector_version="drift-core-v3",
             open_total=3,
             open_groups_total=len(groups),
             ci=CIBadge(

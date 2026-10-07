@@ -19,6 +19,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from truthlayer.config import DEFAULT_IMMUTABLE_METADATA_PREDICATES
 from truthlayer.domain.enums import DriftType, Severity
 
 
@@ -44,6 +45,11 @@ class QARules(BaseModel):
     stale_after_days: int = Field(default=365, ge=1)
     pricing_stale_days: int | None = Field(default=None, ge=1)
     multi_valued_predicates: list[str] = Field(default_factory=list)
+    #: Defaults to production RulesConfig defaults so Golden cases exercise
+    #: out-of-the-box behaviour (immutable edition-metadata suppression).
+    immutable_metadata_predicates: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_IMMUTABLE_METADATA_PREDICATES)
+    )
     #: Override keys like "pricing_change" / "policy_change".
     severity: dict[str, Severity] = Field(default_factory=dict)
 
