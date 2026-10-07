@@ -31,7 +31,8 @@ import uuid
 from dataclasses import dataclass
 
 from truthlayer.attributes.anchors import normalize_dimension, normalize_number
-from truthlayer.detection.candidates import DriftCandidate
+from truthlayer.attributes.model import AttributeResolution
+from truthlayer.detection.candidates import DriftCandidate, objects_equal
 from truthlayer.detection.context import DetectionContext
 from truthlayer.detection.scoring import (
     HEURISTIC_CONFIDENCE,
@@ -52,6 +53,8 @@ DEFAULT_REUSED_SEVERITY = Severity.HIGH
 @dataclass
 class StaleDetector:
     name: str = NAME
+    #: When None (offline harness, no LLM), behavior is unchanged.
+    attribute_resolution: AttributeResolution | None = None
 
     def detect(
         self,
@@ -94,6 +97,19 @@ class StaleDetector:
                     signals.append("superseding_source")
                     newer_doc = doc
                     break
+
+        # A superseded document flags every one of its facts, which is right
+        # for content that was dropped or changed. But when the chain head
+        # restates the same clause under a *different* predicate wording with
+        # an equivalent value, nothing drifted — only the edition did. Only
+        # non-measure (text/enumeration) attributes are compared here, and
+        # only literal-different predicates, so the frozen measure semantics
+        # (R16-17: identical price across editions still reports) are intact.
+        if (
+            signals == ["superseding_source"]
+            and self._head_restates_synonym(fact, state)
+        ):
+            return None
 
         if signals:
             severity = DEFAULT_CONFIRMED_SEVERITY
@@ -382,6 +398,90 @@ class StaleDetector:
             and not state.newer_version_exists(doc.id)
         ]
         return heads[0] if len(heads) == 1 else None
+
+    @staticmethod
+    def _newest_successor(
+        state: KnowledgeState, document: DocumentView
+    ) -> DocumentView:
+        """Newest document reachable from ``document`` via declared successors.
+
+        Returns ``document`` itself when nothing declares it as old.
+        """
+        successors: dict[uuid.UUID, DocumentView] = {}
+        for doc in state.documents.values():
+            if doc.previous_version_id is not None:
+                successors.setdefault(doc.previous_version_id, doc)
+        head = document
+        seen = {document.id}
+        while True:
+            nxt = successors.get(head.id)
+            if nxt is None or nxt.id in seen:
+                break
+            seen.add(nxt.id)
+            head = nxt
+        return head
+
+    def _head_restates_synonym(
+        self, fact: FactView, state: KnowledgeState
+    ) -> bool:
+        """Whether the chain head restates this clause in another wording.
+
+        Only trusted non-measure attributes qualify, and only when the head
+        uses a *different* predicate literal bound to the same canonical. A
+        literal-identical head statement is a separate, frozen rule and is
+        never consulted here.
+        """
+        resolution = self.attribute_resolution
+        if resolution is None or not resolution.is_eligible(fact.id):
+            return False
+        binding = resolution.bindings.get(
+            (fact.subject_id, fact.predicate.strip().casefold())
+        )
+        if binding is None or not binding.trusted:
+            return False
+        if binding.value_kind not in {"text", "enumeration"}:
+            return False
+        # Facts that are themselves numeric/dated are never covered, whatever
+        # the model said about the attribute: bare value collisions across
+        # unrelated numeric clauses (e.g. 试用期=3 vs 免罚次数=3) must not be
+        # read as a restatement.
+        if fact.object_type not in {"string", "boolean"}:
+            return False
+
+        document = state.fact_document(fact)
+        if document is None:
+            return False
+        head = self._newest_successor(state, document)
+        if head.id == document.id:
+            return False
+
+        for other in state.facts:
+            if other.document_id != head.id or other.subject_id != fact.subject_id:
+                continue
+            if other.predicate.strip().casefold() == fact.predicate.strip().casefold():
+                continue
+            if other.object_type not in {"string", "boolean"}:
+                continue
+            other_binding = resolution.bindings.get(
+                (other.subject_id, other.predicate.strip().casefold())
+            )
+            if (
+                other_binding is None
+                or other_binding.canonical_key != binding.canonical_key
+            ):
+                continue
+            if objects_equal(
+                fact.object_value,
+                fact.object_type,
+                fact.object_entity_id,
+                other.object_value,
+                other.object_type,
+                other.object_entity_id,
+            ) or resolution.is_text_equivalent(
+                fact.subject_id, fact.object_value, other.object_value
+            ):
+                return True
+        return False
 
     @staticmethod
     def _chain_distance(

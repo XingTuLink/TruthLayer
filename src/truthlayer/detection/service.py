@@ -40,7 +40,7 @@ from truthlayer.domain.enums import DriftType
 from truthlayer.providers.llm import LLMProvider
 
 #: Bump on any detector rule change; recorded on every ScanRun (#15).
-DETECTOR_VERSION = "drift-core-v5"
+DETECTOR_VERSION = "drift-core-v6"
 
 
 def _json_safe(value: Any) -> Any:
@@ -163,6 +163,8 @@ class DriftDetectionService:
             attribute_prompt_version = resolver.prompt_version
             for detector in self.detectors:
                 if isinstance(detector, ConflictDetector):
+                    detector.attribute_resolution = resolution
+                elif isinstance(detector, StaleDetector):
                     detector.attribute_resolution = resolution
 
         candidates: list[DriftCandidate] = []
