@@ -376,7 +376,8 @@ end-to-end run). Real-LLM end-to-end HCR evolved over four runs (qwen2.5:7b v1 6
 confirming the end-to-end weak spot is non-determinism in LLM entity-identity and date
 extraction, whose cross-source type-fragmentation (R8) is now fixed in v0.1.1. **The first
 release, v0.1.0 (a CLI-first experimental edition), is published, with the quality-polish
-release v0.1.1 following.** The current version is `0.1.1`.
+release v0.1.1 following, with the attribute semantic resolution and detector-hardening
+release v0.2.0 now published.** The current version is `0.2.0`.
 
 ## Contributing
 

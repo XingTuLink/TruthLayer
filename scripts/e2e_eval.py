@@ -56,7 +56,7 @@ try:
 
     TOOL_VERSION = _pkg_version("truthlayer")
 except Exception:  # noqa: BLE001 - fallback for source checkouts
-    TOOL_VERSION = "0.1.1"
+    TOOL_VERSION = "0.2.0"
 
 
 def apply_llm_overrides(config):
