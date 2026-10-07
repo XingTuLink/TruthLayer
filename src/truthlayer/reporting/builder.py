@@ -32,6 +32,7 @@ from truthlayer.reporting.dto import (
     CIBadge,
     EvidenceSnippet,
     FactSnippet,
+    IssueGroup,
     IssueReport,
     ReportDTO,
     ReportSummary,
@@ -40,8 +41,17 @@ from truthlayer.reporting.dto import (
     ReviewItem,
     SourceSnippet,
 )
-from truthlayer.reporting.humanize import narrative, plain_title
+from truthlayer.reporting.humanize import (
+    group_narrative,
+    narrative,
+    plain_title,
+)
 from truthlayer.reporting.policy import count_blocking
+
+#: Fact-level stale types that repeat once per fact of one dead/old document;
+#: R11 rolls them into a single document-level finding (>=2 members).
+_DOCUMENT_GROUPED_TYPES = frozenset({"confirmed_stale", "possibly_stale"})
+_DOCUMENT_GROUP_MIN_SIZE = 2
 
 
 def _format_scalar(value: object, object_type: str | None) -> str:
@@ -109,6 +119,7 @@ class ReportBuilder:
                 str(i.id),
             )
         )
+        issues, groups = self._roll_up_document_stale(issues)
 
         open_severities = Counter(d.severity for d in open_drifts)
         fail_on = config.ci.fail_on
@@ -160,10 +171,88 @@ class ReportBuilder:
                     "duplicate",
                 )
             },
+            open_groups_total=len(groups),
             ci=ci,
             attribute_review=self._review_channels(detection),
         )
-        return ReportDTO(summary=summary, issues=issues)
+        return ReportDTO(summary=summary, issues=issues, groups=groups)
+
+    @staticmethod
+    def _roll_up_document_stale(
+        issues: list[IssueReport],
+    ) -> tuple[list[IssueReport], list[IssueGroup]]:
+        """Collapse same-doc fact-level stale storms into document findings.
+
+        Pure presentation logic (R11): detection rows, CI counts and
+        resolution semantics stay at fact granularity; each member issue is
+        embedded in the group for drill-down and per-fact resolution.
+        """
+        buckets: dict[tuple[str, uuid.UUID], list[IssueReport]] = {}
+        ungrouped: list[IssueReport] = []
+        for issue in issues:
+            if (
+                issue.drift_type in _DOCUMENT_GROUPED_TYPES
+                and issue.old_source is not None
+            ):
+                key = (issue.drift_type, issue.old_source.document_id)
+                buckets.setdefault(key, []).append(issue)
+            else:
+                ungrouped.append(issue)
+
+        groups: list[IssueGroup] = []
+        for (drift_type, document_id), members in buckets.items():
+            if len(members) < _DOCUMENT_GROUP_MIN_SIZE:
+                ungrouped.extend(members)
+                continue
+            members.sort(
+                key=lambda i: (
+                    -SEVERITY_RANK[i.severity],
+                    i.detected_at,
+                    str(i.id),
+                )
+            )
+            head = members[0]
+            story = group_narrative(
+                drift_type,
+                head.old_source.filename
+                if head.old_source is not None
+                else str(document_id),
+                len(members),
+            )
+            groups.append(
+                IssueGroup(
+                    drift_type=drift_type,
+                    severity=head.severity,
+                    document_id=document_id,
+                    filename=head.old_source.filename
+                    if head.old_source is not None
+                    else str(document_id),
+                    source=head.old_source,
+                    count=len(members),
+                    title=story.title,
+                    why=story.why,
+                    recommendation=story.recommendation,
+                    suggested_decisions=list(story.suggested_decisions),
+                    first_detected_at=min(i.detected_at for i in members),
+                    issues=members,
+                )
+            )
+
+        ungrouped.sort(
+            key=lambda i: (
+                -SEVERITY_RANK[i.severity],
+                i.detected_at,
+                str(i.id),
+            )
+        )
+        groups.sort(
+            key=lambda g: (
+                -SEVERITY_RANK[g.severity],
+                g.first_detected_at,
+                g.filename,
+            )
+        )
+        return ungrouped, groups
 
     @staticmethod
     def _review_channels(

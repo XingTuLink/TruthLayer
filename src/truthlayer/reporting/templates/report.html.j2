@@ -110,6 +110,10 @@
   .rev-item .pair { font-weight:600; word-break:break-all; }
   .rev-item .meta { color:var(--muted); font-size:12px; word-break:break-all; }
   .rev-tag { display:inline-block; font-size:11px; font-weight:700; color:#92400e; background:#fef3c7; border-radius:4px; padding:0 6px; margin-right:6px; }
+  .doc-group .grp-item { padding:7px 0; border-bottom:1px dashed var(--line); font-size:13px; line-height:1.7; }
+  .doc-group .grp-item:last-child { border-bottom:none; }
+  .doc-group .grp-item .val { font-weight:600; word-break:break-all; }
+  .doc-group .grp-item .meta { color:var(--muted); font-size:12px; word-break:break-all; }
   .empty { color:var(--muted); padding:28px 0; font-size:14px; }
   footer { margin-top:48px; color:var(--muted); font-size:12px; border-top:1px solid var(--line); padding-top:14px; line-height:1.7; }
   footer .copyright { margin-top:8px; font-size:12px; color:#9ca3af; }
@@ -269,8 +273,45 @@
 
   {% for sev, sev_label in sev_sections %}
     {% set group_issues = report.issues | selectattr('severity', 'equalto', sev) | list %}
-    {% if group_issues %}
-    <h2>{{ sev_label }}级别需确认的问题（{{ group_issues | length }}）</h2>
+    {% set sev_groups = report.groups | selectattr('severity', 'equalto', sev) | list %}
+    {% if sev_groups or group_issues %}
+    <h2>{{ sev_label }}级别需确认的问题（{{ sev_groups | length }} 份文档 · {{ group_issues | length }} 个单项）</h2>
+    {% for g in sev_groups %}
+    <div class="issue sev-{{ sev }} doc-group">
+      <div class="head">
+        <span class="badge {{ sev }}">{{ sev_cn[sev] }}</span>
+        <span class="badge type">{{ type_names.get(g.drift_type, g.drift_type) }} · 文档级</span>
+      </div>
+      <div class="body">
+        <div class="title">{{ g.title }}</div>
+        <div class="why"><strong>问题说明：</strong>{{ g.why }}</div>
+
+        <details class="evidence">
+          <summary>事实明细（{{ g.count }} 条，可下钻逐条处置）—— 点击展开</summary>
+          {% for mi in g.issues %}
+          <div class="grp-item">
+            <div class="val">{{ mi.subject or '—' }} / {{ mi.predicate or '—' }}{% if mi.old_fact %} = {{ mi.old_fact.object_display }}{% endif %}</div>
+            <div class="meta">
+              {% if mi.old_fact %}有效期 {{ mi.old_fact.valid_from or '?' }} ~ {{ mi.old_fact.valid_to or '至今' }} · {% endif %}
+              <code>{{ mi.id }}</code>
+              · <span class="cmd mono">truthlayer resolve {{ mi.id }} --decision &lt;decision&gt;</span>
+            </div>
+          </div>
+          {% endfor %}
+        </details>
+
+        <div class="recommend">
+          <strong>建议处理方式：</strong>{{ g.recommendation }}
+          <details class="op">
+            <summary>技术操作：如何执行处置</summary>
+            {% set dec_cn = {'accept_newer':'采纳新值', 'keep_old':'保留旧值', 'manual_override':'人工裁定', 'false_positive':'标记误报'} %}
+            <div class="decision">可选决策：{% for d in g.suggested_decisions %}<code>{{ dec_cn.get(d, d) }}（{{ d }}）</code>{% if not loop.last %} / {% endif %}{% endfor %}</div>
+            <div class="meta">文档级聚合仅用于降噪：处置仍按事实逐条执行（在上方明细中复制命令），单条标记误报不影响同文档其余事实。</div>
+          </details>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
     {% for issue in group_issues %}
     <div class="issue sev-{{ sev }}">
       <div class="head">
@@ -370,7 +411,7 @@
     {% endif %}
   {% endfor %}
 
-  {% if not report.issues %}
+  {% if not report.issues and not report.groups %}
   <p class="empty">当前没有待确认的知识问题。已处理 {{ s.resolved_total }} 个，已忽略 {{ s.ignored_total }} 个。</p>
   {% endif %}
 

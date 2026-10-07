@@ -121,6 +121,58 @@ def narrative(drift_type: str, detail: dict[str, Any]) -> Narrative:
     )
 
 
+_GROUP_TITLE = {
+    "confirmed_stale": (
+        "文档《{filename}》已被新版本取代，{count} 条事实随文档失效"
+    ),
+    "possibly_stale": (
+        "文档《{filename}》长期未复核，{count} 条事实可能已过期"
+    ),
+}
+
+_GROUP_WHY = {
+    "confirmed_stale": (
+        "这份文档已在版本链中被更新版显式取代；下列事实逐条卡片只是同一份"
+        "文档失效的重复信号，AI 若仍引用其中任一条，都会向用户传递已失效的"
+        "政策、价格或规则。"
+    ),
+    "possibly_stale": (
+        "这份文档超过配置的复核阈值后仍未见到更新来源；下列事实共享同一个"
+        "年龄信号，逐条卡片只是重复，真正需要的是对整份文档时效性的一次"
+        "业务确认。"
+    ),
+}
+
+_GROUP_RECOMMEND = {
+    "confirmed_stale": (
+        "请以更新版文档为准核对这份文档；展开明细可下钻到个别事实，"
+        "逐条保留或标记误报。"
+    ),
+    "possibly_stale": (
+        "请业务负责人复核整份文档：确认仍有效可逐条保留，已更新则采纳新值，"
+        "无需继续跟踪可标记误报；展开明细可下钻到单条事实。"
+    ),
+}
+
+
+def group_narrative(drift_type: str, filename: str, count: int) -> Narrative:
+    """Document-level wording for R11 rollups (same type, one source doc)."""
+    return Narrative(
+        title=_GROUP_TITLE.get(
+            drift_type,
+            "文档《{filename}》存在 {count} 条同类问题",
+        ).format(filename=filename, count=count),
+        why=_GROUP_WHY.get(
+            drift_type, "下列事实来自同一份文档，属于同一个文档级问题。"
+        ),
+        recommendation=_GROUP_RECOMMEND.get(
+            drift_type,
+            "请核对来源与证据后做出处置（resolve）或忽略（ignore）。",
+        ),
+        suggested_decisions=tuple(_SUGGESTED.get(drift_type, ())),
+    )
+
+
 def short_title(drift_type: str, detail: dict[str, Any]) -> str:
     """One-line, evidence-safe summary used by ``drift list`` and report cards."""
     subject = detail.get("subject")

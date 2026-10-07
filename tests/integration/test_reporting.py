@@ -133,6 +133,7 @@ def test_report_counts_evidence_and_sources(
     assert s.open_total == 2
     assert s.open_by_type == {
         "conflict": 1, "possibly_stale": 0, "confirmed_stale": 0,
+        "reused_stale_value": 0,
         "superseded": 1, "duplicate": 0,
     }
 

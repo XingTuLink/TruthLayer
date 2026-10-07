@@ -88,6 +88,30 @@ class IssueReport(DTO):
     resolution: ResolutionSnippet | None = None
 
 
+class IssueGroup(DTO):
+    """Document-level rollup of fact-level stale findings (R11).
+
+    One superseded handbook produces dozens of ``confirmed_stale`` rows;
+    showing them one card per fact floods the report. The group presents the
+    real, document-scoped problem while every member issue stays available
+    (with its drift id) for drill-down and per-fact resolution.
+    """
+
+    group_type: str = "document_stale"
+    drift_type: str  # "confirmed_stale" | "possibly_stale"
+    severity: str  # highest severity among the member issues
+    document_id: uuid.UUID
+    filename: str
+    source: SourceSnippet | None = None
+    count: int
+    title: str
+    why: str
+    recommendation: str
+    suggested_decisions: list[str] = Field(default_factory=list)
+    first_detected_at: datetime
+    issues: list[IssueReport] = Field(default_factory=list)
+
+
 class CIBadge(DTO):
     fail_on: str
     triggered: bool
@@ -148,6 +172,9 @@ class ReportSummary(DTO):
     ignored_total: int = 0
     resolved_total: int = 0
     open_by_type: dict[str, int] = Field(default_factory=dict)
+    #: Document-level stale rollups (R11); purely presentational, CI counts
+    #: above stay at fact granularity.
+    open_groups_total: int = 0
 
     ci: CIBadge
 
@@ -158,3 +185,4 @@ class ReportSummary(DTO):
 class ReportDTO(DTO):
     summary: ReportSummary
     issues: list[IssueReport] = Field(default_factory=list)
+    groups: list[IssueGroup] = Field(default_factory=list)
