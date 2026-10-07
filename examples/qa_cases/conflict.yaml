@@ -197,6 +197,20 @@ cases:
       - {id: f2, subject: b1, predicate: work_location, value: " 西安 ", value_type: string, source: db}
     expected_drifts: []
 
+  - id: conflict_expired_window_only_stale
+    title: 一方有效期已在基准日前结束，只走 stale 不按现行冲突处理
+    category: positive
+    documents:
+      - {id: da, filename: 旧差旅标准.md, source_type: policy}
+      - {id: db, filename: 现行手册.md, source_type: policy}
+    entities:
+      - {id: t1, name: 住宿标准, type: policy}
+    facts:
+      - {id: f1, subject: t1, predicate: lodging_allowance, value: 350, value_type: number, source: da, valid_from: 2022-03-01, valid_to: 2023-12-31}
+      - {id: f2, subject: t1, predicate: lodging_allowance, value: 500, value_type: number, source: db}
+    expected_drifts:
+      - {type: confirmed_stale, subject: t1, predicate: lodging_allowance, severity: medium}
+
   - id: conflict_amb_int_float_same_number
     title: 149 与 149.0 是同一数值
     category: ambiguous_negative

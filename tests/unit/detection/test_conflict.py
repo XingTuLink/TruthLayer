@@ -150,6 +150,90 @@ def test_multi_valued_predicate_escape_hatch(context):
     assert ConflictDetector().detect(state, tolerant) == []
 
 
+def test_expired_fact_vs_undated_fact_not_conflict(context):
+    # One source states an explicit validity end in the past; the other
+    # current document carries no dates. The expired fact is a stale case,
+    # not a current conflict.
+    state = build_state(
+        [
+            make_fact(
+                "expired",
+                predicate="住宿标准",
+                value=350,
+                document="old_policy.csv",
+                valid_from=date(2022, 3, 1),
+                valid_to=date(2023, 12, 31),
+            ),
+            make_fact(
+                "current",
+                predicate="住宿标准",
+                value=500,
+                document="current_manual.csv",
+            ),
+        ],
+        documents=[
+            make_document("old_policy.csv"),
+            make_document("current_manual.csv"),
+        ],
+    )
+    assert ConflictDetector().detect(state, context) == []
+
+
+def test_valid_to_equal_as_of_still_conflict(context):
+    state = build_state(
+        [
+            make_fact(
+                "a",
+                predicate="住宿标准",
+                value=350,
+                document="old_policy.csv",
+                valid_to=date(2026, 9, 25),
+            ),
+            make_fact(
+                "b",
+                predicate="住宿标准",
+                value=500,
+                document="current_manual.csv",
+            ),
+        ],
+        documents=[
+            make_document("old_policy.csv"),
+            make_document("current_manual.csv"),
+        ],
+    )
+    results = ConflictDetector().detect(state, context)
+    assert len(results) == 1
+    assert results[0].drift_type is DriftType.CONFLICT
+
+
+def test_both_facts_expired_not_conflict(context):
+    state = build_state(
+        [
+            make_fact(
+                "a",
+                predicate="住宿标准",
+                value=300,
+                document="old_a.csv",
+                valid_from=date(2020, 1, 1),
+                valid_to=date(2021, 12, 31),
+            ),
+            make_fact(
+                "b",
+                predicate="住宿标准",
+                value=350,
+                document="old_b.csv",
+                valid_from=date(2021, 1, 1),
+                valid_to=date(2022, 12, 31),
+            ),
+        ],
+        documents=[
+            make_document("old_a.csv"),
+            make_document("old_b.csv"),
+        ],
+    )
+    assert ConflictDetector().detect(state, context) == []
+
+
 def test_different_predicates_or_subjects_not_conflict(context):
     state = build_state(
         [

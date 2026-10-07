@@ -234,6 +234,7 @@ def test_all_five_drift_types_detected_and_persisted(session: Session) -> None:
         "conflict": 1,
         "possibly_stale": 1,
         "confirmed_stale": 1,
+        "reused_stale_value": 0,
         "superseded": 1,
         "duplicate": 1,
     }

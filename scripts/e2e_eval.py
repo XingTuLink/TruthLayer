@@ -37,7 +37,10 @@ from sqlalchemy import select  # noqa: E402
 
 from truthlayer.db.orm import Entity, Fact, ScanRun  # noqa: E402
 from truthlayer.db.session import SessionLocal  # noqa: E402
-from truthlayer.detection.service import DriftDetectionService  # noqa: E402
+from truthlayer.detection.service import (  # noqa: E402
+    DETECTOR_VERSION,
+    DriftDetectionService,
+)
 from truthlayer.extraction.prompts import PROMPT_VERSION  # noqa: E402
 from truthlayer.extraction.service import (  # noqa: E402
     KnowledgeExtractionService,
@@ -54,8 +57,6 @@ try:
     TOOL_VERSION = _pkg_version("truthlayer")
 except Exception:  # noqa: BLE001 - fallback for source checkouts
     TOOL_VERSION = "0.1.1"
-
-DETECTOR_VERSION = "detectors-v1"
 
 
 def apply_llm_overrides(config):

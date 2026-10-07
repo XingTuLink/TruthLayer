@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
+from datetime import date
 from dataclasses import dataclass, field
 
 from truthlayer.attributes import (
@@ -452,6 +453,13 @@ class ConflictDetector:
             a.valid_from, a.valid_to, b.valid_from, b.valid_to
         ):
             return None
+        # A fact whose validity window ended before the scan date is an
+        # expired statement; it is handled by the stale detectors, not by a
+        # current-conflict comparison.
+        if _expired_before(a.valid_to, context.as_of) or _expired_before(
+            b.valid_to, context.as_of
+        ):
+            return None
         doc_a = state.fact_document(a)
         doc_b = state.fact_document(b)
         if doc_a is not None and doc_b is not None and doc_a.id == doc_b.id:
@@ -583,6 +591,11 @@ class ConflictDetector:
         if any(len(v.strip()) > ENUM_MAX_VALUE_LEN for v in values):
             return True
         return len(values) > ENUM_MAX_DISTINCT
+
+
+def _expired_before(valid_to: date | None, as_of: date) -> bool:
+    """True when the fact's validity window closed strictly before as_of."""
+    return valid_to is not None and valid_to < as_of
 
 
 def _order_old_new(a: FactView, b: FactView) -> tuple[FactView, FactView]:
