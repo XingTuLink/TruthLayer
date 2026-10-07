@@ -55,6 +55,12 @@ from truthlayer.extraction.knowledge_hash import (
 from truthlayer.extraction.prompts import PROMPT_VERSION, SYSTEM_PROMPT, build_user_prompt
 from truthlayer.extraction.schemas import ExtractionEnvelope, RawEntity, RawFact
 from truthlayer.extraction.snapshot import write_snapshot
+from truthlayer.extraction.validity_anchor import (
+    ANCHOR_CALENDAR_DERIVED,
+    ANCHOR_DOCUMENT_SCOPE,
+    ANCHOR_QUOTED,
+    annotate_validity_anchors,
+)
 from truthlayer.providers.embedding import EmbeddingProvider
 from truthlayer.providers.llm import LLMProvider
 
@@ -155,6 +161,12 @@ class ExtractionResult:
     # Facts persisted with a structured measure unit (fact-extract-v5+).
     facts_with_measure: int = 0
     review_dates_propagated: int = 0
+    # valid_to provenance classes tagged post-LLM (fact-extract-v6+):
+    # quoted expires deterministically; the other two are downgraded to the
+    # non-blocking review channel by the stale detector.
+    valid_to_anchor_quoted: int = 0
+    valid_to_anchor_document_scope: int = 0
+    valid_to_anchor_calendar_derived: int = 0
     chunk_embeddings: int = 0
     entity_embeddings: int = 0
     embedding_dim: int | None = None
@@ -471,6 +483,16 @@ class KnowledgeExtractionService:
         # same chunk onto that subject's undated facts (before persistence),
         # so the stale detector gets an age signal small models omit.
         result.review_dates_propagated += propagate_review_dates(envelope.facts)
+        # Deterministic provenance tag for every valid_to (fact-extract-v6):
+        # the date is kept, but its anchoring class decides confidence.
+        anchor_counts = annotate_validity_anchors(envelope.facts, chunk.text)
+        result.valid_to_anchor_quoted += anchor_counts.get(ANCHOR_QUOTED, 0)
+        result.valid_to_anchor_document_scope += anchor_counts.get(
+            ANCHOR_DOCUMENT_SCOPE, 0
+        )
+        result.valid_to_anchor_calendar_derived += anchor_counts.get(
+            ANCHOR_CALENDAR_DERIVED, 0
+        )
 
         for raw_fact in envelope.facts:
             self._persist_fact(
@@ -623,6 +645,7 @@ class KnowledgeExtractionService:
                 tax_basis=raw_fact.tax_basis,
                 valid_from=valid_from,
                 valid_to=valid_to,
+                valid_to_anchor_source=raw_fact.valid_to_anchor,
                 observed_at=observed_at,
                 confidence=raw_fact.confidence,
                 status=FactStatus.ACTIVE.value,

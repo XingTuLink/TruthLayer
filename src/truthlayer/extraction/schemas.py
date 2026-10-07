@@ -11,7 +11,14 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    field_validator,
+    model_validator,
+)
 
 NonBlank = Annotated[str, Field(min_length=1)]
 IsoDate = Annotated[
@@ -70,6 +77,20 @@ class RawFact(BaseModel):
     observed_at: IsoDate | None = None
     quote: NonBlank
     confidence: float = Field(default=0.7, ge=0.0, le=1.0)
+
+    # Provenance class of valid_to, assigned deterministically after LLM
+    # validation (validity_anchor.annotate_validity_anchors). Never part of
+    # the LLM payload: private attributes are excluded from model input and
+    # serialization, so the model cannot self-certify its own anchor.
+    _valid_to_anchor: str | None = PrivateAttr(default=None)
+
+    @property
+    def valid_to_anchor(self) -> str | None:
+        return self._valid_to_anchor
+
+    @valid_to_anchor.setter
+    def valid_to_anchor(self, value: str | None) -> None:
+        self._valid_to_anchor = value
 
     @field_validator("subject", "predicate", "object_entity", "quote", "unit")
     @classmethod

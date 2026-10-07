@@ -57,6 +57,10 @@ class FactView:
     measure_unit: str | None = None
     currency: str | None = None
     tax_basis: str | None = None
+    # valid_to evidence provenance (fact-extract-v6+, migration 0003):
+    # quoted / document_scope / calendar_derived. None on pre-v6 rows,
+    # treated as trusted; unquoted classes only reach possibly_stale.
+    valid_to_anchor: str | None = None
 
     @property
     def age_basis(self) -> date | None:
@@ -219,6 +223,7 @@ def load_knowledge_state(
                 measure_unit=fact.measure_unit,
                 currency=fact.currency,
                 tax_basis=fact.tax_basis,
+                valid_to_anchor=fact.valid_to_anchor_source,
             )
         )
 

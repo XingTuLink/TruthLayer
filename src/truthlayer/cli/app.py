@@ -240,10 +240,20 @@ def _print_extraction_summary(result: ExtractionResult) -> None:
         if result.facts_with_measure
         else ""
     )
+    inferred = (
+        result.valid_to_anchor_document_scope
+        + result.valid_to_anchor_calendar_derived
+    )
+    anchors = (
+        f" | valid_to anchors: {result.valid_to_anchor_quoted} quoted, "
+        f"{inferred} review-only"
+        if result.valid_to_anchor_quoted or inferred
+        else ""
+    )
     typer.echo(
         f"Chunks    : {result.chunks_processed} processed{failed} | "
         f"entities +{result.entities_new} ({result.entities_total} total) | "
-        f"facts +{result.facts_new} ({result.facts_total} total){measure}"
+        f"facts +{result.facts_new} ({result.facts_total} total){measure}{anchors}"
     )
     embeddings = (
         f"{result.chunk_embeddings} chunk(s), "

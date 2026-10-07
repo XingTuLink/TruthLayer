@@ -98,6 +98,11 @@ class QAFact(BaseModel):
     #: Structured measure anchor (fact-extract-v5+); R16 matches reused
     #: values only within the same parsed measure dimension.
     measure_unit: str | None = None
+    #: valid_to provenance (fact-extract-v6+): quoted / document_scope /
+    #: calendar_derived. Omitted on legacy cases and treated as trusted.
+    valid_to_anchor: Literal[
+        "quoted", "document_scope", "calendar_derived"
+    ] | None = None
 
     @model_validator(mode="after")
     def _validate_object(self) -> "QAFact":

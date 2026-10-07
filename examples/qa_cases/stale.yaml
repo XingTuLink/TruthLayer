@@ -182,7 +182,74 @@ cases:
     expected_drifts:
       - {type: possibly_stale, subject: p1, predicate: daily_rate_cny, severity: warning}
 
+  # ---- fact-extract-v6：valid_to 来源分档（降级可见，不阻断） ------------
+  - id: stale_possibly_calendar_derived_expiry
+    title: 截止日期由周期标签推算（正文不含该日期），过期也只报疑似不阻断
+    category: positive
+    as_of: 2026-10-07
+    documents:
+      - {id: d1, filename: 办公用品领用目录_2026Q3.xlsx, source_type: corporate}
+    entities:
+      - {id: s1, name: 白板笔, type: supply}
+    facts:
+      # 模型从标题“2026年第三季度”脑补 09-30；行事实自身无任何日期信号，
+      # 但过期仍必须可见（possibly），不能因无年龄信号而静默。
+      - {id: f1, subject: s1, predicate: 领用单价, value: 3.5, value_type: number, source: d1, valid_to: 2026-09-30, valid_to_anchor: calendar_derived}
+    expected_drifts:
+      - {type: possibly_stale, subject: s1, predicate: 领用单价, severity: warning}
+
+  - id: stale_possibly_document_scope_expiry
+    title: 截止日期来自文档抬头有效期声明（不在该事实 quote 内），降级为疑似
+    category: positive
+    as_of: 2026-10-07
+    documents:
+      - {id: d1, filename: 差旅管理办法_2025版.pdf, source_type: policy}
+    entities:
+      - {id: t1, name: 市内交通补贴, type: policy}
+    facts:
+      - {id: f1, subject: t1, predicate: daily_traffic_cny, value: 80, value_type: number, source: d1, valid_to: 2026-06-30, valid_to_anchor: document_scope}
+    expected_drifts:
+      - {type: possibly_stale, subject: t1, predicate: daily_traffic_cny, severity: warning}
+
+  - id: stale_possibly_inferred_expiry_beats_fresh_age
+    title: 推断有效期已过时，即使最近仍被观测（年龄未超阈值）也报疑似
+    category: positive
+    as_of: 2026-10-07
+    documents:
+      - {id: d1, filename: 季度促销页_2026Q3.md, source_type: pricing}
+    entities:
+      - {id: p1, name: 满减促销位, type: product}
+    facts:
+      - {id: f1, subject: p1, predicate: promo_price, value: 199, value_type: number, source: d1, observed_at: 2026-09-20, valid_to: 2026-09-30, valid_to_anchor: calendar_derived}
+    expected_drifts:
+      - {type: possibly_stale, subject: p1, predicate: promo_price, severity: warning}
+
+  - id: stale_confirmed_quoted_anchor_expiry
+    title: 截止日期逐字出现在事实自身证据中（quoted），过期仍确定性报 confirmed
+    category: positive
+    as_of: 2026-10-07
+    documents:
+      - {id: d1, filename: 夏季促销通知.md, source_type: policy}
+    entities:
+      - {id: c1, name: 夏日满减活动, type: campaign}
+    facts:
+      - {id: f1, subject: c1, predicate: discount_rate, value: 0.85, value_type: number, source: d1, valid_to: 2026-09-30, valid_to_anchor: quoted}
+    expected_drifts:
+      - {type: confirmed_stale, subject: c1, predicate: discount_rate, severity: medium}
+
   # ---- Negative：不该报警 -----------------------------------------------
+  - id: stale_neg_inferred_anchor_not_yet_expired
+    title: 推算的截止日期尚未到期且无年龄信号，不报警（推断档也不凭空升级）
+    category: negative
+    as_of: 2026-10-07
+    documents:
+      - {id: d1, filename: 办公用品领用目录_2026Q4.xlsx, source_type: corporate}
+    entities:
+      - {id: s1, name: 复印纸, type: supply}
+    facts:
+      - {id: f1, subject: s1, predicate: 领用单价, value: 25, value_type: number, source: d1, valid_to: 2026-12-31, valid_to_anchor: calendar_derived}
+    expected_drifts: []
+
   - id: stale_neg_no_age_signal
     title: 完全没有年龄信号的事实绝不猜过期
     category: negative

@@ -48,6 +48,12 @@ DEFAULT_CONFIRMED_SEVERITY = Severity.MEDIUM
 #: Quoting a dead value inside a *current* document actively pollutes live
 #: answers, so R16 defaults one notch above plain confirmed_stale.
 DEFAULT_REUSED_SEVERITY = Severity.HIGH
+#: valid_to provenance classes (string contract with
+#: extraction.validity_anchor) whose expiry date is not literally anchored
+#: in the fact's own evidence. They stay visible via possibly_stale but must
+#: never block CI as deterministic confirmed_stale. None (pre-v6 rows) is
+#: trusted as before.
+REVIEW_ONLY_ANCHORS = frozenset({"document_scope", "calendar_derived"})
 
 
 @dataclass
@@ -81,6 +87,7 @@ class StaleDetector:
     ) -> DriftCandidate | None:
         signals: list[str] = []
         newer_doc: DocumentView | None = None
+        inferred_expiry_anchor: str | None = None
 
         # Immutable edition/identity metadata is historically true about its
         # own document regardless of expiry or supersession — never a stale
@@ -89,7 +96,13 @@ class StaleDetector:
             return None
 
         if fact.valid_to is not None and fact.valid_to < context.as_of:
-            signals.append("valid_to_expired")
+            if fact.valid_to_anchor in REVIEW_ONLY_ANCHORS:
+                # A real date, but its provenance is a document-level header
+                # or pure calendar inference, not this fact's own quote.
+                # Keep it visible, keep it non-blocking.
+                inferred_expiry_anchor = fact.valid_to_anchor
+            else:
+                signals.append("valid_to_expired")
 
         if document is not None:
             for doc in state.documents.values():
@@ -144,9 +157,44 @@ class StaleDetector:
                     "valid_to": fact.valid_to.isoformat()
                     if fact.valid_to
                     else None,
+                    "valid_to_anchor": fact.valid_to_anchor,
                 },
                 fingerprint_key=(
                     DriftType.CONFIRMED_STALE.value,
+                    str(fact.id),
+                ),
+            )
+
+        # The expiry date is real but not literally anchored in this fact's
+        # own quote (document-scope header statement or calendar inference).
+        # Surface it as a review nudge instead of a deterministic block; an
+        # explicit supersession above would already have returned confirmed.
+        if inferred_expiry_anchor is not None:
+            return DriftCandidate(
+                detector_type=NAME,
+                drift_type=DriftType.POSSIBLY_STALE,
+                target_type=TargetType.FACT,
+                target_id=fact.id,
+                severity=Severity.WARNING,
+                ai_impact_level=ai_impact_for(Severity.WARNING),
+                confidence=HEURISTIC_CONFIDENCE,
+                subject_entity_id=fact.subject_id,
+                predicate=fact.predicate,
+                old_fact_id=fact.id,
+                old_document_id=document.id if document else None,
+                effective_at=at_utc_midday(fact.valid_to),
+                detail={
+                    "reason": "inferred_validity_expired",
+                    "anchor_source": inferred_expiry_anchor,
+                    "subject": fact.subject_name,
+                    "predicate": fact.predicate,
+                    "source": document.filename if document else None,
+                    "valid_to": fact.valid_to.isoformat()
+                    if fact.valid_to
+                    else None,
+                },
+                fingerprint_key=(
+                    DriftType.POSSIBLY_STALE.value,
                     str(fact.id),
                 ),
             )

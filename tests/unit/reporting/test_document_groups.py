@@ -108,7 +108,9 @@ def test_possibly_stale_rolls_up_independently():
     assert len(groups) == 1
     assert groups[0].drift_type == "possibly_stale"
     assert groups[0].severity == "warning"
-    assert "长期未复核" in groups[0].title
+    # Neutral wording: a possibly_stale group may mix age-only facts and
+    # facts whose expiry rests on a document-scope / inferred date.
+    assert "时效性存疑" in groups[0].title
 
 
 def test_single_fact_stays_a_standalone_issue():

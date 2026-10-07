@@ -63,6 +63,7 @@ def make_fact(
     measure_unit: str | None = None,
     currency: str | None = None,
     tax_basis: str | None = None,
+    valid_to_anchor: str | None = None,
 ) -> FactView:
     object_eid = uid(f"entity:{object_entity}") if object_entity else None
     return FactView(
@@ -82,6 +83,7 @@ def make_fact(
         measure_unit=measure_unit,
         currency=currency,
         tax_basis=tax_basis,
+        valid_to_anchor=valid_to_anchor,
     )
 
 

@@ -296,6 +296,12 @@ class Fact(_Timestamps, Base):
     tax_basis: Mapped[str | None] = mapped_column(String(16), nullable=True)
     valid_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Evidence anchoring of valid_to (fact-extract-v6+, migration 0003):
+    # quoted / document_scope / calendar_derived. NULL on pre-v6 rows,
+    # which the detector treats as trusted (legacy behavior).
+    valid_to_anchor_source: Mapped[str | None] = mapped_column(
+        String(24), nullable=True
+    )
     observed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

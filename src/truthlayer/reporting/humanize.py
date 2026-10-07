@@ -37,6 +37,11 @@ _WHY = {
         "该事实超过配置的复核阈值后仍未见到更新来源，可能已经失效。当前仅有年龄信号、"
         "置信度较低，需要人工确认而非自动改判。"
     ),
+    "possibly_stale.inferred_validity_expired": (
+        "该事实的截止日期不是其自身证据逐字给出的，而是来自文档级有效期声明"
+        "或标题/版次中的周期标签推算；因此只作提示、不阻断。日期可能属实，"
+        "需要人工核对原文后确认，而不是由系统自动判死。"
+    ),
     "superseded": (
         "存在显式声明的新版本文档，旧版本不应再作为 AI 的知识来源；其中未被新版本覆盖的"
         "内容可能继续造成错误引用。"
@@ -65,6 +70,11 @@ _RECOMMEND = {
     "possibly_stale": (
         "请业务负责人复核该来源文件：若确认仍有效，保留即可；"
         "若已更新，请采纳新值或推动修订文档；若无需继续跟踪，可标记为误报。"
+    ),
+    "possibly_stale.inferred_validity_expired": (
+        "请核对该截止日期在原文中是否确有依据：若文档确有有效期声明，"
+        "请确认整份文档是否需要更新或下线；若日期只是从周期标签推算且文件"
+        "实际仍在执行，可标记为误报，系统会记住该判断。"
     ),
     "superseded": (
         "请确认新版文档已完整覆盖旧版内容并完成切换；"
@@ -108,9 +118,15 @@ _SUGGESTED = {
 
 
 def narrative(drift_type: str, detail: dict[str, Any]) -> Narrative:
-    why = _WHY.get(drift_type, "检测器发现了需要人工确认的知识异常。")
+    reason_key = drift_type
+    if drift_type == "possibly_stale" and detail.get("reason") == (
+        "inferred_validity_expired"
+    ):
+        reason_key = "possibly_stale.inferred_validity_expired"
+    why = _WHY.get(reason_key, "检测器发现了需要人工确认的知识异常。")
     recommendation = _RECOMMEND.get(
-        drift_type, "请核对来源与证据后做出处置（resolve）或忽略（ignore）。"
+        reason_key,
+        "请核对来源与证据后做出处置（resolve）或忽略（ignore）。",
     )
     suggested = _SUGGESTED.get(drift_type, ())
     return Narrative(
@@ -126,7 +142,7 @@ _GROUP_TITLE = {
         "文档《{filename}》已被新版本取代，{count} 条事实随文档失效"
     ),
     "possibly_stale": (
-        "文档《{filename}》长期未复核，{count} 条事实可能已过期"
+        "文档《{filename}》时效性存疑，{count} 条事实可能已过期"
     ),
 }
 
@@ -137,9 +153,10 @@ _GROUP_WHY = {
         "政策、价格或规则。"
     ),
     "possibly_stale": (
-        "这份文档超过配置的复核阈值后仍未见到更新来源；下列事实共享同一个"
-        "年龄信号，逐条卡片只是重复，真正需要的是对整份文档时效性的一次"
-        "业务确认。"
+        "下列事实来自同一份文档，共享同一个文档时效性问题：可能是超过复核"
+        "阈值后未见更新来源，也可能是事实标注的截止日期仅来自文档级有效期"
+        "声明或周期标签推算（不阻断）。逐条卡片只是同一问题的重复信号，"
+        "真正需要的是对整份文档时效性的一次业务确认。"
     ),
 }
 
@@ -173,6 +190,12 @@ def group_narrative(drift_type: str, filename: str, count: int) -> Narrative:
     )
 
 
+_ANCHOR_SOURCE_WORD = {
+    "document_scope": "文档抬头的有效期声明",
+    "calendar_derived": "周期标签推算",
+}
+
+
 def short_title(drift_type: str, detail: dict[str, Any]) -> str:
     """One-line, evidence-safe summary used by ``drift list`` and report cards."""
     subject = detail.get("subject")
@@ -193,6 +216,13 @@ def short_title(drift_type: str, detail: dict[str, Any]) -> str:
             f"{detail.get('old_source')} → {detail.get('new_source')}）"
         )
     if drift_type == "possibly_stale":
+        if detail.get("reason") == "inferred_validity_expired":
+            basis = _ANCHOR_SOURCE_WORD.get(
+                detail.get("anchor_source"), "文档级声明或周期推算"
+            )
+            valid_to = detail.get("valid_to")
+            suffix = f"（截止 {valid_to}）" if valid_to else ""
+            return f"{head} 有效期依据为{basis}，可能已过期{suffix}（warning）"
         age = detail.get("age_days")
         suffix = f"，已 {age} 天未复核" if age is not None else ""
         return f"{head} 长期未更新{suffix}（warning）"
@@ -235,6 +265,16 @@ def plain_title(drift_type: str, detail: dict[str, Any]) -> str:
             f"{detail.get('head_value')!s}"
         )
     if drift_type == "possibly_stale":
+        if detail.get("reason") == "inferred_validity_expired":
+            basis = _ANCHOR_SOURCE_WORD.get(
+                detail.get("anchor_source"), "文档级声明或周期推算"
+            )
+            valid_to = detail.get("valid_to")
+            suffix = f"（标注截止 {valid_to}）" if valid_to else ""
+            return (
+                f"「{subject}」的「{predicate}」标注的有效期依据仅为{basis}，"
+                f"可能已经过期{suffix}"
+            )
         age = detail.get("age_days")
         suffix = f"（已 {age} 天未复核）" if age is not None else ""
         return f"「{subject}」的「{predicate}」长期未复核，可能已经过期{suffix}"

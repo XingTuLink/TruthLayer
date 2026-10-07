@@ -35,3 +35,7 @@ report.json
 # IDE / OS
 .idea/
 .DS_Store
+
+# Local agent/tool workspace and scratch assets
+.trae/
+assets/

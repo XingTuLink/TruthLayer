@@ -110,6 +110,7 @@ def build_world(case: QACase) -> CaseWorld:
                 observed_at=fact.observed_at,
                 confidence=0.9,
                 measure_unit=fact.measure_unit,
+                valid_to_anchor=fact.valid_to_anchor,
                 document_id=(
                     document_ids[fact.source] if fact.source is not None else None
                 ),

@@ -40,7 +40,7 @@ from truthlayer.domain.enums import DriftType
 from truthlayer.providers.llm import LLMProvider
 
 #: Bump on any detector rule change; recorded on every ScanRun (#15).
-DETECTOR_VERSION = "drift-core-v6"
+DETECTOR_VERSION = "drift-core-v7"
 
 
 def _json_safe(value: Any) -> Any:
