@@ -97,6 +97,19 @@
   .recommend { background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:10px 14px; margin:12px 0; font-size:14px; }
   .cmd { background:#111827; color:#e5e7eb; border-radius:6px; padding:8px 12px; display:block; margin:8px 0; overflow-x:auto; font-size:12.5px; }
   .decision { font-size:12px; color:var(--muted); margin:6px 0; }
+
+  /* —— 属性语义审计三通道（不阻断、非完全可复现） —— */
+  .review { background:var(--card); border:1px solid var(--line); border-radius:10px; margin:20px 0; box-shadow:var(--shadow); }
+  .review > summary { cursor:pointer; padding:12px 16px; font-weight:700; font-size:15px; list-style:none; }
+  .review > summary::before { content:"▸ "; color:var(--medium); }
+  .review[open] > summary::before { content:"▾ "; }
+  .review .note { color:var(--muted); font-size:12.5px; padding:0 16px 10px; }
+  .review h3 { font-size:13.5px; margin:12px 16px 6px; color:var(--ink); }
+  .review h3 .cnt { color:var(--medium); font-weight:700; }
+  .rev-item { border-top:1px solid var(--line); padding:9px 16px; font-size:13px; line-height:1.7; }
+  .rev-item .pair { font-weight:600; word-break:break-all; }
+  .rev-item .meta { color:var(--muted); font-size:12px; word-break:break-all; }
+  .rev-tag { display:inline-block; font-size:11px; font-weight:700; color:#92400e; background:#fef3c7; border-radius:4px; padding:0 6px; margin-right:6px; }
   .empty { color:var(--muted); padding:28px 0; font-size:14px; }
   footer { margin-top:48px; color:var(--muted); font-size:12px; border-top:1px solid var(--line); padding-top:14px; line-height:1.7; }
   footer .copyright { margin-top:8px; font-size:12px; color:#9ca3af; }
@@ -213,6 +226,47 @@
   </div>
 
   {% set sev_sections = [('critical','严重'), ('high','高'), ('medium','中'), ('warning','警告')] %}
+
+  {% if s.attribute_review %}
+  {% set ar = s.attribute_review %}
+  <details class="review">
+    <summary>属性语义审计（不阻断 CI）：待人工确认 {{ ar.pending_review | length }} ·
+      跨属性复核 {{ ar.cross_attribute_review | length }} ·
+      语义等价已抑制 {{ ar.normalized_equivalent | length }}</summary>
+    <div class="note">
+      这些条目来自 LLM 开放式属性归并（{{ ar.attribute_prompt_version or '—' }}），
+      <strong>不参与 fail_on、不影响退出码</strong>，且因模型输出可能波动而<strong>不保证跨扫描可复现</strong>；
+      阻断通道（上方严重/高/中/警告问题）仍完全由字面恒等与结构化锚点确定性产生。
+    </div>
+    {% set channel_meta = [
+      ('pending_review', '待人工确认（模型分离/提问，尚未定罪）', ar.pending_review),
+      ('cross_attribute_review', '跨属性复核（结构疑似，模型未共判/拆分/跨批）', ar.cross_attribute_review),
+      ('normalized_equivalent', '语义等价抑制（字面不同，模型判等价）', ar.normalized_equivalent)
+    ] %}
+    {% for ckey, clabel, citems in channel_meta %}
+      {% if citems %}
+      <h3>{{ clabel }} <span class="cnt">（{{ citems | length }}）</span></h3>
+      {% for item in citems %}
+      <div class="rev-item">
+        <div class="pair"><span class="rev-tag">{{ item.reason }}</span>{{ item.subject }}：
+          「{{ item.predicate_a }} = {{ item.value_a }}」 ⇄ 「{{ item.predicate_b }} = {{ item.value_b }}」
+        </div>
+        <div class="meta">
+          来源：{{ item.source_a or '—' }} ⇄ {{ item.source_b or '—' }}
+          {% if item.canonical_name %} · 归并属性：{{ item.canonical_name }}{% endif %}
+          {% if item.value_kind %} · 值类型：{{ item.value_kind }}{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+      {% endif %}
+    {% endfor %}
+    {% if ar.notes %}
+    <h3>解析留痕</h3>
+    {% for note in ar.notes %}<div class="rev-item meta">{{ note }}</div>{% endfor %}
+    {% endif %}
+  </details>
+  {% endif %}
+
   {% for sev, sev_label in sev_sections %}
     {% set group_issues = report.issues | selectattr('severity', 'equalto', sev) | list %}
     {% if group_issues %}

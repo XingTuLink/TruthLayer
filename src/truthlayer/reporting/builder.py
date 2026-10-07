@@ -36,6 +36,8 @@ from truthlayer.reporting.dto import (
     ReportDTO,
     ReportSummary,
     ResolutionSnippet,
+    ReviewChannels,
+    ReviewItem,
     SourceSnippet,
 )
 from truthlayer.reporting.humanize import narrative, plain_title
@@ -47,6 +49,13 @@ def _format_scalar(value: object, object_type: str | None) -> str:
         return "是" if value is True else "否"
     if value is None:
         return ""
+    return str(value)
+
+
+def _review_scalar(value: object) -> str | int | float | bool | None:
+    """Coerce channel values (dates restored by KnowledgeState, etc.)."""
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
     return str(value)
 
 
@@ -151,8 +160,48 @@ class ReportBuilder:
                 )
             },
             ci=ci,
+            attribute_review=self._review_channels(detection),
         )
         return ReportDTO(summary=summary, issues=issues)
+
+    @staticmethod
+    def _review_channels(
+        detection: DetectionResult | None,
+    ) -> ReviewChannels | None:
+        if detection is None or detection.attribute_prompt_version is None:
+            return None
+
+        def to_item(channel: str, item) -> ReviewItem:
+            return ReviewItem(
+                channel=channel,
+                reason=item.reason,
+                subject=item.subject_name,
+                predicate_a=item.predicate_a,
+                predicate_b=item.predicate_b,
+                value_a=_review_scalar(item.value_a),
+                value_b=_review_scalar(item.value_b),
+                source_a=item.source_a,
+                source_b=item.source_b,
+                canonical_name=item.canonical_name,
+                value_kind=item.value_kind,
+            )
+
+        return ReviewChannels(
+            attribute_prompt_version=detection.attribute_prompt_version,
+            pending_review=[
+                to_item("pending_review", item)
+                for item in detection.pending_review
+            ],
+            cross_attribute_review=[
+                to_item("cross_attribute_review", item)
+                for item in detection.cross_attribute_review
+            ],
+            normalized_equivalent=[
+                to_item("normalized_equivalent", item)
+                for item in detection.normalized_equivalent
+            ],
+            notes=list(detection.attribute_notes),
+        )
 
     def build_issue(self, drift: Drift) -> IssueReport:
         """Full detail for one drift of ANY status (used by ``drift show``)."""

@@ -96,6 +96,38 @@ class CIBadge(DTO):
     by_severity: dict[str, int] = Field(default_factory=dict)
 
 
+class ReviewItem(DTO):
+    """One non-blocking attribute-resolution audit item (phase 1)."""
+
+    channel: str
+    reason: str
+    subject: str
+    predicate_a: str
+    predicate_b: str
+    value_a: str | int | float | bool | None = None
+    value_b: str | int | float | bool | None = None
+    source_a: str | None = None
+    source_b: str | None = None
+    canonical_name: str | None = None
+    value_kind: str | None = None
+
+
+class ReviewChannels(DTO):
+    """Three audit channels. These NEVER participate in ci.fail_on.
+
+    ``non_deterministic`` is always True on purpose: items can fluctuate
+    across scans because they depend on the model partition (the blocking
+    drift channel remains fully reproducible).
+    """
+
+    non_deterministic: bool = True
+    attribute_prompt_version: str | None = None
+    pending_review: list[ReviewItem] = Field(default_factory=list)
+    cross_attribute_review: list[ReviewItem] = Field(default_factory=list)
+    normalized_equivalent: list[ReviewItem] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
 class ReportSummary(DTO):
     workspace_id: uuid.UUID
     workspace_name: str
@@ -118,6 +150,9 @@ class ReportSummary(DTO):
     open_by_type: dict[str, int] = Field(default_factory=dict)
 
     ci: CIBadge
+
+    #: Present only for scans that ran the attribute-resolution stage.
+    attribute_review: ReviewChannels | None = None
 
 
 class ReportDTO(DTO):

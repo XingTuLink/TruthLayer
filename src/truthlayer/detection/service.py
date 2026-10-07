@@ -21,6 +21,11 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from truthlayer.attributes import (
+    AttributeResolver,
+    ChannelItem,
+    ChannelKind,
+)
 from truthlayer.config import TruthLayerConfig
 from truthlayer.db.orm import Drift, ScanRun
 from truthlayer.detection.base import DriftDetector
@@ -32,9 +37,10 @@ from truthlayer.detection.state import load_knowledge_state
 from truthlayer.detection.stale import StaleDetector
 from truthlayer.detection.superseded import SupersededDetector
 from truthlayer.domain.enums import DriftType
+from truthlayer.providers.llm import LLMProvider
 
 #: Bump on any detector rule change; recorded on every ScanRun (#15).
-DETECTOR_VERSION = "drift-core-v1"
+DETECTOR_VERSION = "drift-core-v2"
 
 
 def _json_safe(value: Any) -> Any:
@@ -74,10 +80,36 @@ class DetectionResult:
         default_factory=lambda: {dt.value: 0 for dt in DriftType}
     )
     items: list[DriftSummaryItem] = field(default_factory=list)
+    #: Attribute-resolution audit channels (phase 1, in-process, never
+    #: persisted, never part of ci.fail_on / exit codes).
+    pending_review: list[ChannelItem] = field(default_factory=list)
+    cross_attribute_review: list[ChannelItem] = field(default_factory=list)
+    normalized_equivalent: list[ChannelItem] = field(default_factory=list)
+    attribute_notes: list[str] = field(default_factory=list)
+    attribute_prompt_version: str | None = None
 
     @property
     def total(self) -> int:
         return self.new_count + self.suppressed_count
+
+    @property
+    def review_total(self) -> int:
+        return (
+            len(self.pending_review)
+            + len(self.cross_attribute_review)
+            + len(self.normalized_equivalent)
+        )
+
+    def channel_counts(self) -> dict[str, int]:
+        return {
+            ChannelKind.PENDING_REVIEW.value: len(self.pending_review),
+            ChannelKind.CROSS_ATTRIBUTE_REVIEW.value: len(
+                self.cross_attribute_review
+            ),
+            ChannelKind.NORMALIZED_EQUIVALENT.value: len(
+                self.normalized_equivalent
+            ),
+        }
 
 
 def default_detectors() -> list[DriftDetector]:
@@ -106,16 +138,52 @@ class DriftDetectionService:
         self,
         workspace_id: uuid.UUID,
         scan_run: ScanRun,
+        llm: LLMProvider | None = None,
+        *,
+        attribute_source_types: frozenset[str] | None = None,
     ) -> DetectionResult:
         state = load_knowledge_state(self.session, workspace_id)
         context = DetectionContext.from_config(self.config, self.as_of)
 
+        # Attribute semantic resolution is an independent stage that needs the
+        # cross-chunk, cross-document global view (extraction is per-chunk).
+        # With no LLM configured (e.g. `truthlayer check`, offline harness)
+        # detection behavior is byte-identical to the literal detector.
+        resolution = None
+        attribute_prompt_version: str | None = None
+        if llm is not None:
+            resolver = (
+                AttributeResolver(
+                    llm, enabled_source_types=attribute_source_types
+                )
+                if attribute_source_types is not None
+                else AttributeResolver(llm)
+            )
+            resolution = resolver.resolve(state)
+            attribute_prompt_version = resolver.prompt_version
+            for detector in self.detectors:
+                if isinstance(detector, ConflictDetector):
+                    detector.attribute_resolution = resolution
+
         candidates: list[DriftCandidate] = []
+        channel_items: list[ChannelItem] = []
         for detector in self.detectors:
             candidates.extend(detector.detect(state, context))
+            if isinstance(detector, ConflictDetector):
+                channel_items.extend(detector.channel_items)
 
         known = self._load_known_fingerprints(workspace_id)
-        result = DetectionResult()
+        result = DetectionResult(
+            attribute_prompt_version=attribute_prompt_version,
+            attribute_notes=list(resolution.notes) if resolution else [],
+        )
+        for item in channel_items:
+            if item.kind is ChannelKind.PENDING_REVIEW:
+                result.pending_review.append(item)
+            elif item.kind is ChannelKind.CROSS_ATTRIBUTE_REVIEW:
+                result.cross_attribute_review.append(item)
+            else:
+                result.normalized_equivalent.append(item)
 
         # Deterministic order for stable outputs/tests.
         candidates.sort(key=lambda c: c.fingerprint())

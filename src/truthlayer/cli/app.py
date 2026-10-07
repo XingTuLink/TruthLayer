@@ -312,6 +312,15 @@ def _print_detection_summary(result: DetectionResult) -> None:
         f"superseded {counts['superseded']} | "
         f"duplicate {counts['duplicate']}"
     )
+    if result.review_total:
+        channels = result.channel_counts()
+        typer.secho(
+            "Attr review (non-blocking, model-assisted, not reproducible): "
+            f"pending {channels['pending_review']} | "
+            f"cross-attribute {channels['cross_attribute_review']} | "
+            f"normalized-equivalent {channels['normalized_equivalent']}",
+            fg=typer.colors.YELLOW,
+        )
     for item in result.items:
         if not item.is_new:
             continue
@@ -450,7 +459,7 @@ def _run_scan(
 
             scan_run = session.get(ScanRun, extraction.scan_run_id)
             detection = DriftDetectionService(session, config).run(
-                extraction.workspace_id, scan_run
+                extraction.workspace_id, scan_run, llm=llm
             )
             # DTO is assembled pre-commit; files are written afterwards.
             report = ReportBuilder(session).build(

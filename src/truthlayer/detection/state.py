@@ -52,6 +52,11 @@ class FactView:
     observed_at: date | None
     confidence: float
     document_id: uuid.UUID | None
+    # Structured measure anchors (fact-extract-v5+, migration 0002). None on
+    # pre-v5 rows; attribute resolution reads these instead of scraping text.
+    measure_unit: str | None = None
+    currency: str | None = None
+    tax_basis: str | None = None
 
     @property
     def age_basis(self) -> date | None:
@@ -174,6 +179,9 @@ def load_knowledge_state(
                     if fact.source_chunk_id is not None
                     else None
                 ),
+                measure_unit=fact.measure_unit,
+                currency=fact.currency,
+                tax_basis=fact.tax_basis,
             )
         )
 

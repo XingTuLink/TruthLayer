@@ -59,6 +59,9 @@ def make_fact(
     observed_at: date | None = None,
     document: str | None = "price_2025.csv",
     confidence: float = 0.7,
+    measure_unit: str | None = None,
+    currency: str | None = None,
+    tax_basis: str | None = None,
 ) -> FactView:
     object_eid = uid(f"entity:{object_entity}") if object_entity else None
     return FactView(
@@ -75,6 +78,9 @@ def make_fact(
         observed_at=observed_at,
         confidence=confidence,
         document_id=uid(f"doc:{document}") if document else None,
+        measure_unit=measure_unit,
+        currency=currency,
+        tax_basis=tax_basis,
     )
 
 

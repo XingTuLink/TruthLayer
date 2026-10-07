@@ -15,6 +15,8 @@ from truthlayer.reporting.dto import (
     IssueReport,
     ReportDTO,
     ReportSummary,
+    ReviewChannels,
+    ReviewItem,
     SourceSnippet,
 )
 from truthlayer.reporting.html_report import render_html
@@ -185,3 +187,38 @@ def test_json_html_share_same_dto_fields(triggered: bool) -> None:
     issue_id = payload["issues"][0]["id"]
     assert issue_id in html
     assert report.summary.detector_version in html
+
+
+def test_attribute_review_channels_render_in_json_and_html() -> None:
+    report = _report(triggered=False)
+    report.summary.attribute_review = ReviewChannels(
+        attribute_prompt_version="attribute-resolve-v1",
+        pending_review=[
+            ReviewItem(
+                channel="pending_review",
+                reason="model_merged_unconfirmed",
+                subject="云客服专业版",
+                predicate_a="2026年价格",
+                predicate_b="渠道结算价",
+                value_a=23800,
+                value_b=22800,
+                source_a="06.md",
+                source_b="02.md",
+                canonical_name="年度含税价格",
+                value_kind="measure",
+            )
+        ],
+        cross_attribute_review=[],
+        normalized_equivalent=[],
+    )
+    payload = json.loads(render_json(report))
+    review = payload["summary"]["attribute_review"]
+    assert review["non_deterministic"] is True
+    assert review["pending_review"][0]["reason"] == "model_merged_unconfirmed"
+
+    html = render_html(report)
+    assert "属性语义审计" in html
+    assert "不阻断 CI" in html
+    assert "渠道结算价" in html
+    assert "attribute-resolve-v1" in html
+

@@ -84,6 +84,22 @@ def apply_llm_overrides(config):
     )
 
 
+def attribute_source_types_override():
+    """Eval-only gray-release override for attribute resolution.
+
+    TRUTHLAYER_E2E_ATTRIBUTE_SOURCE_TYPES="corporate,pricing" widens the
+    phase-1 gray release (which defaults to source_type=pricing in the
+    product) so corpora whose sources are typed generically can still
+    exercise the audit channels. Product defaults and the CLI are
+    untouched; the channels remain non-blocking.
+    """
+    raw = os.environ.get("TRUTHLAYER_E2E_ATTRIBUTE_SOURCE_TYPES")
+    if not raw:
+        return None
+    types = frozenset(item.strip() for item in raw.split(",") if item.strip())
+    return types or None
+
+
 def _write_json(path: Path, payload, *, lines: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
@@ -155,6 +171,7 @@ def main() -> int:
     if config.extraction is None:
         raise SystemExit("corpus config needs an 'extraction' section")
     config, llm_overridden = apply_llm_overrides(config)
+    attr_source_types = attribute_source_types_override()
 
     run_name = f"{config.workspace.name}-{stamp}"
     config = config.model_copy(
@@ -171,6 +188,12 @@ def main() -> int:
         f"embed={config.embedding.model if config.embedding else None}",
         flush=True,
     )
+    if attr_source_types is not None:
+        print(
+            "[e2e] attribute gray-release source_types="
+            f"{sorted(attr_source_types)} (eval override)",
+            flush=True,
+        )
 
     with SessionLocal() as session:
         ingestion = DocumentIngestionService(
@@ -194,7 +217,10 @@ def main() -> int:
 
         scan_run = session.get(ScanRun, extraction.scan_run_id)
         detection = DriftDetectionService(session, config).run(
-            extraction.workspace_id, scan_run
+            extraction.workspace_id,
+            scan_run,
+            llm=llm,
+            attribute_source_types=attr_source_types,
         )
         report = ReportBuilder(session).build(
             extraction.workspace_id, config, scan_run=scan_run, detection=detection
@@ -251,6 +277,18 @@ def main() -> int:
         lines=True,
     )
     _write_json(args.out / "facts.jsonl", fact_rows, lines=True)
+    if report.summary.attribute_review:
+        review = report.summary.attribute_review
+        review_rows = [
+            item.model_dump()
+            for channel in (
+                review.pending_review,
+                review.cross_attribute_review,
+                review.normalized_equivalent,
+            )
+            for item in channel
+        ]
+        _write_json(args.out / "review_channels.jsonl", review_rows, lines=True)
     _write_json(
         args.out / "manifest.json",
         {
@@ -276,6 +314,14 @@ def main() -> int:
             "new_this_scan": report.summary.new_this_scan,
             "open_by_type": report.summary.open_by_type,
             "by_severity": report.summary.ci.by_severity,
+            "attribute_prompt_version": detection.attribute_prompt_version,
+            "attribute_source_types": (
+                sorted(attr_source_types)
+                if attr_source_types is not None
+                else ["pricing"]
+            ),
+            "review_channels": detection.channel_counts(),
+            "review_notes": detection.attribute_notes,
             "knowledge_hash": report.summary.knowledge_hash,
             "notes": "Non-deterministic real-LLM run; not a CI gate.",
         },
