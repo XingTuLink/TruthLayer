@@ -403,3 +403,59 @@ def test_one_unparseable_chunk_does_not_abort_scan(
         .select_from(Fact)
         .where(Fact.workspace_id == run.workspace_id)
     ) == result.facts_total
+
+
+class TransientThenOK(FakeLLM):
+    """First two calls per text raise a transient 400, then succeed.
+
+    Mirrors the deepseek-flash "response_format type is unavailable now"
+    server-side hiccup observed in e2e runs.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.failures_by_text: dict[str, int] = {}
+
+    def generate_structured(
+        self, *, input_text: str, output_schema, system_prompt=None, model=None
+    ) -> ExtractionEnvelope:
+        seen = self.failures_by_text.get(input_text, 0)
+        if seen < 2:
+            self.failures_by_text[input_text] = seen + 1
+            raise ProviderError(
+                "Error code: 400 - This response_format type is "
+                "unavailable now (transient)"
+            )
+        return super().generate_structured(
+            input_text=input_text,
+            output_schema=output_schema,
+            system_prompt=system_prompt,
+            model=model,
+        )
+
+
+def test_transient_chunk_failure_recovers_with_retry(
+    session: Session, workspace: tuple[Path, TruthLayerConfig]
+) -> None:
+    base_dir, config = workspace
+    DocumentIngestionService(session, config, base_dir).run()
+
+    slept: list[float] = []
+    result = KnowledgeExtractionService(
+        session,
+        config,
+        base_dir,
+        TransientThenOK(),
+        FakeEmbedder(),
+        sleeper=slept.append,
+    ).run()
+
+    # The chunk failed twice with backoff, then succeeded: nothing lost.
+    assert result.chunks_processed == 1
+    assert result.chunks_failed == 0
+    assert result.chunk_retries == 2
+    assert result.chunks_recovered == 1
+    assert slept == [5.0, 15.0]
+    assert result.facts_total >= 1
+    run = session.get(ScanRun, result.scan_run_id)
+    assert run.status == "completed"

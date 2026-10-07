@@ -212,6 +212,12 @@ def main() -> int:
             f"chunks_failed={extraction.chunks_failed}",
             flush=True,
         )
+        if extraction.chunk_retries:
+            print(
+                f"[e2e] transient retries: {extraction.chunk_retries} "
+                f"(chunks recovered: {extraction.chunks_recovered})",
+                flush=True,
+            )
         for label, message in extraction.errors:
             print(f"[e2e]   ! extraction error {label}: {message[:160]}", flush=True)
 
@@ -304,6 +310,8 @@ def main() -> int:
             "documents_failed": ingestion.failed,
             "chunks_processed": extraction.chunks_processed,
             "chunks_failed": extraction.chunks_failed,
+            "chunk_retries": extraction.chunk_retries,
+            "chunks_recovered": extraction.chunks_recovered,
             "extraction_errors": [
                 {"chunk": label, "error": message[:300]}
                 for label, message in extraction.errors

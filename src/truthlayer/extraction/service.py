@@ -21,8 +21,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 import unicodedata
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -59,6 +61,80 @@ from truthlayer.providers.llm import LLMProvider
 # No detector in Sprint 3; recorded explicitly for ScanRun honesty.
 DETECTOR_VERSION: str | None = None
 
+#: Total attempts per chunk LLM call (1 = no retry). Online providers emit
+#: short-lived 429/5xx/"unavailable now" errors (observed on deepseek-flash
+#: across e2e runs); one skipped chunk zeroes the whole document downstream,
+#: so chunk calls get a small bounded retry before the chunk is recorded as
+#: failed. Backoff doubles: 5s, then 15s.
+DEFAULT_LLM_MAX_ATTEMPTS = 3
+DEFAULT_LLM_BACKOFF_SECONDS = (5.0, 15.0)
+
+#: Message/status signatures of failures worth retrying. Deliberately omits
+#: auth and deterministic bad-request errors, which never heal by waiting.
+_TRANSIENT_SIGNATURES = (
+    "429",
+    "500",
+    "502",
+    "503",
+    "504",
+    "rate limit",
+    "too many requests",
+    "unavailable",
+    "overloaded",
+    "timeout",
+    "timed out",
+    "temporar",
+    "connection",
+    "reset by peer",
+    "bad gateway",
+    "service unavailable",
+    "internal server error",
+    "try again",
+)
+
+
+def is_transient_provider_error(exc: ProviderError) -> bool:
+    """Heuristic: does this provider failure plausibly heal on retry?"""
+    message = str(exc).casefold()
+    return any(sig in message for sig in _TRANSIENT_SIGNATURES)
+
+
+def call_with_transient_retry(
+    call: Callable[[], Any],
+    *,
+    max_attempts: int = DEFAULT_LLM_MAX_ATTEMPTS,
+    backoff_seconds: tuple[float, ...] = DEFAULT_LLM_BACKOFF_SECONDS,
+    sleeper: Callable[[float], None] = time.sleep,
+    on_retry: Callable[[int, float, ProviderError], None] | None = None,
+) -> Any:
+    """Call ``call`` with bounded exponential backoff on transient failures.
+
+    Non-transient :class:`ProviderError` and any other exception propagate
+    immediately (no wasted wait). ``on_retry(attempt, waited, exc)`` is called
+    before sleeping, where ``attempt`` is 1-based (1 == first retry).
+    """
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be >= 1")
+    last_exc: ProviderError | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return call()
+        except ProviderError as exc:
+            last_exc = exc
+            if attempt >= max_attempts or not is_transient_provider_error(exc):
+                raise
+            wait = (
+                backoff_seconds[attempt - 1]
+                if attempt - 1 < len(backoff_seconds)
+                else backoff_seconds[-1]
+            )
+            if on_retry is not None:
+                on_retry(attempt, wait, exc)
+            sleeper(wait)
+    # Unreachable: the loop either returns or re-raises on the final attempt.
+    if last_exc is not None:  # pragma: no cover - defensive
+        raise last_exc
+
 
 @dataclass
 class ExtractionResult:
@@ -68,6 +144,10 @@ class ExtractionResult:
     documents: int = 0
     chunks_processed: int = 0
     chunks_failed: int = 0
+    #: Total transient-failure retries consumed across chunk LLM calls.
+    chunk_retries: int = 0
+    #: Chunks whose first call failed transiently but succeeded on retry.
+    chunks_recovered: int = 0
     entities_new: int = 0
     facts_new: int = 0
     facts_total: int = 0
@@ -172,12 +252,19 @@ class KnowledgeExtractionService:
         base_dir: Path,
         llm: LLMProvider,
         embedder: EmbeddingProvider | None = None,
+        *,
+        llm_max_attempts: int = DEFAULT_LLM_MAX_ATTEMPTS,
+        llm_backoff_seconds: tuple[float, ...] = DEFAULT_LLM_BACKOFF_SECONDS,
+        sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
         self.session = session
         self.config = config
         self.base_dir = Path(base_dir)
         self.llm = llm
         self.embedder = embedder
+        self.llm_max_attempts = llm_max_attempts
+        self.llm_backoff_seconds = llm_backoff_seconds
+        self.sleeper = sleeper
 
     def run(self) -> ExtractionResult:
         result = ExtractionResult(workspace_name=self.config.workspace.name)
@@ -335,11 +422,31 @@ class KnowledgeExtractionService:
             chunk_text=chunk.text, filename=document.filename, page=page
         )
         label = f"{document.filename}#chunk{chunk.chunk_index}"
+        attempts_seen = 0
+
+        def _on_retry(attempt: int, wait: float, exc: ProviderError) -> None:
+            result.chunk_retries += 1
+            result.warnings.append(
+                f"{label}: transient provider error on attempt {attempt} "
+                f"({str(exc)[:120]}); retrying in {wait:.0f}s"
+            )
+
         try:
-            envelope = self.llm.generate_structured(
-                input_text=prompt_input,
-                output_schema=ExtractionEnvelope,
-                system_prompt=SYSTEM_PROMPT,
+            def _generate() -> ExtractionEnvelope:
+                nonlocal attempts_seen
+                attempts_seen += 1
+                return self.llm.generate_structured(
+                    input_text=prompt_input,
+                    output_schema=ExtractionEnvelope,
+                    system_prompt=SYSTEM_PROMPT,
+                )
+
+            envelope = call_with_transient_retry(
+                _generate,
+                max_attempts=self.llm_max_attempts,
+                backoff_seconds=self.llm_backoff_seconds,
+                sleeper=self.sleeper,
+                on_retry=_on_retry,
             )
         except ProviderError as exc:
             # One unparseable LLM response must not abort a multi-document
@@ -348,6 +455,12 @@ class KnowledgeExtractionService:
             result.chunks_failed += 1
             result.errors.append((label, str(exc)))
             return
+        if attempts_seen > 1:
+            # Retries were consumed and the final attempt succeeded.
+            result.chunks_recovered += 1
+            result.warnings.append(
+                f"{label}: recovered after {attempts_seen} attempts"
+            )
 
         declared: dict[str, RawEntity] = {}
         for raw_entity in envelope.entities:
