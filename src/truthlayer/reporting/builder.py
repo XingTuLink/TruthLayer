@@ -186,24 +186,45 @@ class ReportBuilder:
         Pure presentation logic (R11): detection rows, CI counts and
         resolution semantics stay at fact granularity; each member issue is
         embedded in the group for drill-down and per-fact resolution.
+
+        A target=document self-declared-expiry card heads its own group and
+        absorbs every fact-level stale issue on that document (both
+        confirmed/possibly types, even singletons), carrying the document's
+        own statement quote as group evidence.
         """
+        declared_heads: dict[uuid.UUID, IssueReport] = {}
+        for issue in issues:
+            if (
+                issue.drift_type == "confirmed_stale"
+                and issue.detail.get("reason")
+                == "document_self_declared_expired"
+                and issue.old_source is not None
+            ):
+                declared_heads.setdefault(issue.old_source.document_id, issue)
+        head_ids = {id(head) for head in declared_heads.values()}
+        absorbed: dict[uuid.UUID, list[IssueReport]] = {
+            doc_id: [] for doc_id in declared_heads
+        }
+
         buckets: dict[tuple[str, uuid.UUID], list[IssueReport]] = {}
         ungrouped: list[IssueReport] = []
         for issue in issues:
+            if id(issue) in head_ids:
+                continue
             if (
                 issue.drift_type in _DOCUMENT_GROUPED_TYPES
                 and issue.old_source is not None
             ):
-                key = (issue.drift_type, issue.old_source.document_id)
+                document_id = issue.old_source.document_id
+                if document_id in declared_heads:
+                    absorbed[document_id].append(issue)
+                    continue
+                key = (issue.drift_type, document_id)
                 buckets.setdefault(key, []).append(issue)
             else:
                 ungrouped.append(issue)
 
-        groups: list[IssueGroup] = []
-        for (drift_type, document_id), members in buckets.items():
-            if len(members) < _DOCUMENT_GROUP_MIN_SIZE:
-                ungrouped.extend(members)
-                continue
+        def _sorted_members(members: list[IssueReport]) -> list[IssueReport]:
             members.sort(
                 key=lambda i: (
                     -SEVERITY_RANK[i.severity],
@@ -211,6 +232,14 @@ class ReportBuilder:
                     str(i.id),
                 )
             )
+            return members
+
+        groups: list[IssueGroup] = []
+        for (drift_type, document_id), members in buckets.items():
+            if len(members) < _DOCUMENT_GROUP_MIN_SIZE:
+                ungrouped.extend(members)
+                continue
+            members = _sorted_members(members)
             head = members[0]
             story = group_narrative(
                 drift_type,
@@ -235,6 +264,40 @@ class ReportBuilder:
                     suggested_decisions=list(story.suggested_decisions),
                     first_detected_at=min(i.detected_at for i in members),
                     issues=members,
+                )
+            )
+
+        for document_id, head in declared_heads.items():
+            members = _sorted_members([head, *absorbed[document_id]])
+            filename = (
+                head.old_source.filename
+                if head.old_source is not None
+                else str(document_id)
+            )
+            story = group_narrative(
+                "confirmed_stale",
+                filename,
+                len(members),
+                head_reason="document_self_declared_expired",
+                valid_to=head.detail.get("valid_to"),
+            )
+            groups.append(
+                IssueGroup(
+                    group_type="document_self_declared_expired",
+                    drift_type="confirmed_stale",
+                    severity=head.severity,
+                    document_id=document_id,
+                    filename=filename,
+                    source=head.old_source,
+                    count=len(members),
+                    title=story.title,
+                    why=story.why,
+                    recommendation=story.recommendation,
+                    suggested_decisions=list(story.suggested_decisions),
+                    first_detected_at=min(i.detected_at for i in members),
+                    issues=members,
+                    head_reason="document_self_declared_expired",
+                    evidence=head.evidence,
                 )
             )
 

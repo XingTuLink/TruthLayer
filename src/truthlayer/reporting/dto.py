@@ -110,6 +110,11 @@ class IssueGroup(DTO):
     suggested_decisions: list[str] = Field(default_factory=list)
     first_detected_at: datetime
     issues: list[IssueReport] = Field(default_factory=list)
+    #: detail.reason of the head issue; identifies a group headed by a
+    #: target=document self-declared-expiry card ("document_self_declared_expired").
+    head_reason: str | None = None
+    #: Head's verbatim evidence (the document's own validity statement).
+    evidence: list[EvidenceSnippet] = Field(default_factory=list)
 
 
 class CIBadge(DTO):

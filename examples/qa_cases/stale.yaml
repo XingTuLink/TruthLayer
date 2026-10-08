@@ -513,3 +513,73 @@ cases:
       - {type: confirmed_stale, subject: p1, predicate: hotel_cap_cny, severity: medium, old_source: 员工手册_2021.docx, new_source: 员工手册_2025.docx}
       - {type: superseded, severity: medium, old_source: 员工手册_2021.docx, new_source: 员工手册_2025.docx}
       - {type: possibly_stale, subject: p1, predicate: travel_lodging_cap, severity: warning}
+      # 差旅文件自行声明有效期至 2023-12-31 且已过期：一张 target=document
+      # 文档卡（R16 闸门同时使其不判沿用失效值）。
+      - {type: confirmed_stale, target: document, subject: stdoc, predicate: 有效期至, severity: medium, old_source: 差旅标准_2022.pdf}
+
+  - id: stale_document_self_declared_expiry
+    title: 独立文档自带逐字锚定的已过期有效期声明 → target=document 一张 confirmed，日期不向行事实传播
+    category: positive
+    as_of: 2026-10-06
+    documents:
+      - {id: dstd, filename: 差旅标准_2022.pdf, source_type: corporate}
+    entities:
+      - {id: stdoc, name: 差旅标准（2022版）, type: policy}
+      - {id: p1, name: 直辖市住宿上限, type: policy}
+      - {id: p2, name: 地级市住宿上限, type: policy}
+    facts:
+      # 文档自己的失效声明：逐字锚定、已过期，文档卡的唯一证据。
+      - {id: f_stmt, subject: stdoc, predicate: 有效期至, value: "2023-12-31", value_type: string, source: dstd, valid_to: 2023-12-31, valid_to_anchor: quoted}
+      # 行事实不继承声明日期，只按年龄出 possibly，报告层折叠进文档卡。
+      - {id: f_biz1, subject: p1, predicate: lodging_cap, value: 350, value_type: number, source: dstd, valid_from: 2022-03-01, measure_unit: "元/晚"}
+      - {id: f_biz2, subject: p2, predicate: lodging_cap, value: 280, value_type: number, source: dstd, valid_from: 2022-03-01, measure_unit: "元/晚"}
+    expected_drifts:
+      - {type: confirmed_stale, target: document, subject: stdoc, predicate: 有效期至, severity: medium, old_source: 差旅标准_2022.pdf}
+      - {type: possibly_stale, subject: p1, predicate: lodging_cap, severity: warning}
+      - {type: possibly_stale, subject: p2, predicate: lodging_cap, severity: warning}
+
+  - id: stale_self_declared_expiry_suppressed_on_version_chain
+    title: 版本链旧版虽自带过期声明，文档级信号由 superseded 承载，不重复出自声明文档卡
+    category: positive
+    as_of: 2026-10-06
+    documents:
+      - {id: dold, filename: 手册_2021.docx, source_type: corporate, group: handbook}
+      - {id: dnew, filename: 手册_2025.docx, source_type: corporate, group: handbook, previous_version_of: dold}
+    entities:
+      - {id: docent, name: 员工手册（2021版）, type: policy}
+      - {id: p1, name: 年假天数, type: policy}
+    facts:
+      - {id: f_stmt, subject: docent, predicate: 有效期至, value: "2023-12-31", value_type: string, source: dold, valid_to: 2023-12-31, valid_to_anchor: quoted}
+      - {id: f_old, subject: p1, predicate: annual_leave_days, value: 5, value_type: number, source: dold}
+      - {id: f_new, subject: p1, predicate: annual_leave_days, value: 10, value_type: number, source: dnew}
+    expected_drifts:
+      - {type: confirmed_stale, subject: p1, predicate: annual_leave_days, severity: medium, old_source: 手册_2021.docx, new_source: 手册_2025.docx}
+      - {type: superseded, severity: medium, old_source: 手册_2021.docx, new_source: 手册_2025.docx}
+
+  - id: stale_self_declared_expiry_requires_quoted_anchor
+    title: 失效声明锚定档为推断（document_scope/calendar_derived）时不产文档卡，行事实只走年龄 possibly
+    category: positive
+    as_of: 2026-10-06
+    documents:
+      - {id: dstd, filename: 制度_2022.pdf, source_type: corporate}
+    entities:
+      - {id: docent, name: 某制度（2022版）, type: policy}
+      - {id: p1, name: 报销上限, type: policy}
+    facts:
+      - {id: f_stmt, subject: docent, predicate: 有效期至, value: "2023-12-31", value_type: string, source: dstd, valid_to: 2023-12-31, valid_to_anchor: document_scope}
+      - {id: f_biz, subject: p1, predicate: claim_cap, value: 500, value_type: number, source: dstd, valid_from: 2022-01-01, measure_unit: "元/次"}
+    expected_drifts:
+      - {type: possibly_stale, subject: p1, predicate: claim_cap, severity: warning}
+
+  - id: stale_neg_self_declared_expiry_future
+    title: 负向：自声明有效期尚未到期 → 无文档卡、无任何告警
+    category: negative
+    as_of: 2026-10-06
+    documents:
+      - {id: dfut, filename: 制度_2026.pdf, source_type: corporate}
+    entities:
+      - {id: docent, name: 某制度（2026版）, type: policy}
+      - {id: p1, name: 报销上限, type: policy}
+    facts:
+      - {id: f_stmt, subject: docent, predicate: 有效期至, value: "2027-12-31", value_type: string, source: dfut, valid_to: 2027-12-31, valid_to_anchor: quoted}
+      - {id: f_biz, subject: p1, predicate: claim_cap, value: 500, value_type: number, source: dfut, valid_from: 2026-09-01, measure_unit: "元/次"}

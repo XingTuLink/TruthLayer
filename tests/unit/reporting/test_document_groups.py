@@ -15,11 +15,13 @@ from datetime import datetime, timezone
 from truthlayer.reporting.builder import ReportBuilder
 from truthlayer.reporting.dto import (
     CIBadge,
+    EvidenceSnippet,
     IssueReport,
     ReportDTO,
     ReportSummary,
     SourceSnippet,
 )
+from truthlayer.reporting.humanize import narrative, plain_title, short_title
 from truthlayer.reporting.html_report import render_html
 from truthlayer.reporting.json_report import render_json
 
@@ -220,3 +222,152 @@ def test_groups_serialize_in_json_report():
     assert raw["drift_type"] == "confirmed_stale"
     assert raw["count"] == 2
     assert len(raw["issues"]) == 2
+
+
+# -- self-declared-expiry document heads ------------------------------------
+
+_EXPIRY_QUOTE = "本标准有效期至2023年12月31日，到期自行废止。"
+
+
+def _declared_head(
+    fid: str = "head",
+    *,
+    source: SourceSnippet | None = None,
+) -> IssueReport:
+    source = source or _source("差旅标准_2022.pdf")
+    issue = _stale_issue(
+        fid,
+        source=source,
+        predicate="有效期至",
+    )
+    issue.subject = "差旅标准（2022版）"
+    issue.detail = {
+        "reason": "document_self_declared_expired",
+        "valid_to": "2023-12-31",
+        "valid_to_anchor": "quoted",
+        "old_source": source.filename,
+        "source": source.filename,
+        "subject": "差旅标准（2022版）",
+        "predicate": "有效期至",
+    }
+    issue.title = short_title("confirmed_stale", issue.detail)
+    issue.human_title = plain_title("confirmed_stale", issue.detail)
+    story = narrative("confirmed_stale", issue.detail)
+    issue.why = story.why
+    issue.recommendation = story.recommendation
+    issue.suggested_decisions = list(story.suggested_decisions)
+    issue.evidence = [
+        EvidenceSnippet(quote=_EXPIRY_QUOTE, filename=source.filename)
+    ]
+    return issue
+
+
+def test_declared_head_absorbs_mixed_stale_members():
+    doc = _source("差旅标准_2022.pdf")
+    head = _declared_head(source=doc)
+    members = [
+        _stale_issue(
+            "p1",
+            drift_type="possibly_stale",
+            severity="warning",
+            source=doc,
+            predicate="住宿标准",
+        ),
+        _stale_issue("c1", source=doc, predicate="交通补贴"),
+    ]
+
+    ungrouped, groups = _rollup([head, *members])
+
+    assert ungrouped == []
+    assert len(groups) == 1
+    g = groups[0]
+    assert g.group_type == "document_self_declared_expired"
+    assert g.head_reason == "document_self_declared_expired"
+    assert g.drift_type == "confirmed_stale"
+    assert g.severity == "medium"
+    assert g.count == 3
+    assert {mi.id for mi in g.issues} == {head.id, *(m.id for m in members)}
+    assert "差旅标准_2022.pdf" in g.title
+    assert "2023-12-31" in g.title
+    # No successor to accept; only acknowledge/keep or dismiss.
+    assert g.suggested_decisions == ["keep_old", "false_positive"]
+    assert g.evidence[0].quote == _EXPIRY_QUOTE
+
+
+def test_declared_group_forms_with_single_head_only():
+    # The min-2 R11 threshold does not apply to a self-declared head.
+    head = _declared_head()
+
+    ungrouped, groups = _rollup([head])
+
+    assert ungrouped == []
+    assert len(groups) == 1
+    assert groups[0].count == 1
+    assert groups[0].issues[0].id == head.id
+
+
+def test_declared_head_does_not_swallow_other_documents_groups():
+    expired_doc = _source("差旅标准_2022.pdf")
+    other_doc = _source("SLA服务协议_2021.pdf")
+    head = _declared_head(source=expired_doc)
+    own_member = _stale_issue(
+        "own",
+        drift_type="possibly_stale",
+        severity="warning",
+        source=expired_doc,
+    )
+    others = [
+        _stale_issue(
+            f"s{i}",
+            drift_type="possibly_stale",
+            severity="warning",
+            source=other_doc,
+        )
+        for i in range(2)
+    ]
+
+    ungrouped, groups = _rollup([head, own_member, *others])
+
+    assert ungrouped == []
+    assert len(groups) == 2
+    by_doc = {g.document_id: g for g in groups}
+    declared_group = by_doc[expired_doc.document_id]
+    assert declared_group.group_type == "document_self_declared_expired"
+    assert {mi.id for mi in declared_group.issues} == {
+        head.id,
+        own_member.id,
+    }
+    other_group = by_doc[other_doc.document_id]
+    assert other_group.group_type == "document_stale"
+    assert {mi.id for mi in other_group.issues} == {m.id for m in others}
+
+
+def test_declared_group_renders_statement_quote_in_html():
+    head = _declared_head()
+    member = _stale_issue(
+        "m1",
+        drift_type="possibly_stale",
+        severity="warning",
+        source=head.old_source,
+        predicate="住宿标准",
+    )
+    _, groups = _rollup([head, member])
+    html = render_html(_report(groups, []))
+
+    assert "文档失效声明原文" in html
+    assert _EXPIRY_QUOTE in html
+    assert "文档声明" in html
+    assert "2023-12-31" in html
+    assert str(head.id) in html and str(member.id) in html
+
+
+def test_declared_group_serializes_in_json_report():
+    head = _declared_head()
+    _, groups = _rollup([head])
+    payload = json.loads(render_json(_report(groups, [])))
+
+    raw = payload["groups"][0]
+    assert raw["group_type"] == "document_self_declared_expired"
+    assert raw["head_reason"] == "document_self_declared_expired"
+    assert raw["evidence"][0]["quote"] == _EXPIRY_QUOTE
+    assert raw["suggested_decisions"] == ["keep_old", "false_positive"]

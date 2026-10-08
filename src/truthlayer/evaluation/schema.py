@@ -134,6 +134,9 @@ class ExpectedDrift(BaseModel):
     severity: Severity | None = None
     old_source: str | None = None
     new_source: str | None = None
+    #: Drift target granularity; "document" for target=document cards
+    #: (e.g. a document's own expired validity statement).
+    target: Literal["fact", "document"] | None = None
 
     def locator_count(self) -> int:
         return sum(
@@ -144,6 +147,7 @@ class ExpectedDrift(BaseModel):
                 self.severity,
                 self.old_source,
                 self.new_source,
+                self.target,
             )
         )
 

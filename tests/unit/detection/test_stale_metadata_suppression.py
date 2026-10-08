@@ -5,6 +5,11 @@ were document-identity metadata (文件编号/版本/生效日期/制单部门/�
 statements that stay true about their own edition forever. Both stale paths
 must stay silent for predicates listed in
 ``rules.immutable_metadata_predicates``.
+
+Exception (drift-core-v9): an expired evidence-anchored validity-END
+statement (有效期至 / 失效日期 …) on a standalone document is the document's
+own declaration of invalidity — it still never raises a FACT-level row, but
+it now produces exactly one target=document confirmed_stale card.
 """
 
 from __future__ import annotations
@@ -44,7 +49,9 @@ def test_metadata_on_superseded_edition_not_confirmed_stale(context):
     assert StaleDetector().detect(state, context) == []
 
 
-def test_metadata_with_expired_valid_to_not_confirmed_stale(context):
+def test_expired_validity_statement_emits_document_card_not_fact_card(context):
+    from truthlayer.domain.enums import TargetType
+
     state = build_state(
         [
             make_fact(
@@ -60,7 +67,17 @@ def test_metadata_with_expired_valid_to_not_confirmed_stale(context):
         documents=[make_document("travel_2022.md", source_type="policy")],
     )
 
-    assert StaleDetector().detect(state, context) == []
+    results = StaleDetector().detect(state, context)
+
+    # No fact-level stale row for the metadata statement itself...
+    assert [c for c in results if c.target_type == TargetType.FACT] == []
+    # ...but one target=document card (legacy None anchor stays trusted).
+    doc_rows = [c for c in results if c.target_type == TargetType.DOCUMENT]
+    assert len(doc_rows) == 1
+    card = doc_rows[0]
+    assert card.drift_type is DriftType.CONFIRMED_STALE
+    assert card.detail["reason"] == "document_self_declared_expired"
+    assert card.old_fact_id is not None
 
 
 def test_metadata_age_over_threshold_not_possibly_stale(context):

@@ -285,6 +285,14 @@ def _describe_drift(item) -> str:
             f"{d.get('old_value')!s} -> {d.get('new_value')!s} "
             f"({d.get('old_source')} -> {d.get('new_source')})"
         )
+    if kind == "confirmed_stale" and d.get("reason") == (
+        "document_self_declared_expired"
+    ):
+        return (
+            f"DOCUMENT {d.get('old_source')} self-declared validity end "
+            f"{d.get('valid_to')} already past (evidence anchor: "
+            f"{d.get('valid_to_anchor')})"
+        )
     if kind in ("possibly_stale", "confirmed_stale"):
         return (
             f"{d.get('subject')} / {d.get('predicate')} "

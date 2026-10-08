@@ -59,13 +59,20 @@ REVIEW_ONLY_ANCHORS = frozenset({"document_scope", "calendar_derived"})
 #: Predicates of a document-level validity-END statement whose own object
 #: is the expiry date (e.g. "有效期至 / 有效期截止 / 失效日期: 2023-12-31").
 #: Start dates (生效/施行) and abolition notices naming ANOTHER edition
-#: ("原手册同时废止") are deliberately excluded. A document carrying an
-#: expired statement of this shape has declared itself no longer live, so
-#: R16 cannot treat its rows as a *current* document reusing a dead value:
-#: the value was current when the document was issued. The document-level
-#: invalidation statement backlog item will generalize this to target=doc.
+#: ("原手册同时废止") are deliberately excluded. Such a statement, when the
+#: date is evidence-anchored in its own quote and already past, is the
+#: document's OWN declaration of invalidity:
+#:   * it is emitted as one target=document confirmed_stale card (standalone
+#:     documents only — an explicit successor already has a superseded card);
+#:   * R16 cannot treat the document's rows as a *current* document reusing a
+#:     dead value: the value was current when the document was issued.
+#: No date is propagated onto the document's other facts — they only fold
+#: into the document card at the report layer.
 _VALIDITY_END_PREFIXES = ("有效期",)
 _VALIDITY_END_PREDICATES = frozenset({"失效日期", "截止日期", "到期日期"})
+
+#: detail.reason of the target=document self-declared-expiry card.
+REASON_DOCUMENT_SELF_DECLARED_EXPIRED = "document_self_declared_expired"
 
 
 @dataclass
@@ -86,6 +93,9 @@ class StaleDetector:
             if candidate is not None:
                 candidates.append(candidate)
         candidates.extend(self._detect_reused_superseded_values(state, context))
+        candidates.extend(
+            self._detect_self_declared_expired_documents(state, context)
+        )
         return candidates
 
     # -- internals ----------------------------------------------------------
@@ -105,6 +115,12 @@ class StaleDetector:
         # own document regardless of expiry or supersession — never a stale
         # alert on either the deterministic or the age-only path.
         if context.is_immutable_metadata(fact.predicate):
+            return None
+
+        # The document's own validity-end statement ("失效日期: 2023-12-31")
+        # is document metadata, not a stale business fact: it surfaces once
+        # as a target=document card below, never as a per-fact row.
+        if self._is_expired_validity_statement(fact, context.as_of):
             return None
 
         if fact.valid_to is not None and fact.valid_to < context.as_of:
@@ -431,6 +447,70 @@ class StaleDetector:
             if document is not None:
                 expired.add(document.id)
         return expired
+
+    # -- target=document: the document declares its own expiry --------------
+
+    def _detect_self_declared_expired_documents(
+        self,
+        state: KnowledgeState,
+        context: DetectionContext,
+    ) -> list[DriftCandidate]:
+        """One confirmed_stale card per standalone document whose own quoted
+        validity-end statement is already past.
+
+        The statement's evidence quote is attached via ``old_fact_id`` (the
+        card body renders the header text verbatim); no date is propagated to
+        the document's other facts. Documents with an explicit successor get
+        their document-level signal from the superseded detector instead.
+        """
+        statements: dict[uuid.UUID, FactView] = {}
+        for fact in sorted(state.facts, key=lambda f: str(f.id)):
+            if not self._is_expired_validity_statement(fact, context.as_of):
+                continue
+            document = state.fact_document(fact)
+            if document is None:
+                continue
+            if state.newer_version_exists(document.id):
+                continue
+            statements.setdefault(document.id, fact)
+
+        candidates: list[DriftCandidate] = []
+        for document_id, statement in sorted(statements.items()):
+            document = state.documents[document_id]
+            severity = context.severity_for_change(
+                document.source_type, DEFAULT_CONFIRMED_SEVERITY
+            )
+            candidates.append(
+                DriftCandidate(
+                    detector_type=NAME,
+                    drift_type=DriftType.CONFIRMED_STALE,
+                    target_type=TargetType.DOCUMENT,
+                    target_id=document_id,
+                    severity=severity,
+                    ai_impact_level=ai_impact_for(severity),
+                    confidence=STRUCTURAL_CONFIDENCE,
+                    subject_entity_id=statement.subject_id,
+                    predicate=statement.predicate,
+                    old_fact_id=statement.id,
+                    old_document_id=document_id,
+                    effective_at=at_utc_midday(statement.valid_to),
+                    detail={
+                        "reason": REASON_DOCUMENT_SELF_DECLARED_EXPIRED,
+                        "subject": statement.subject_name,
+                        "predicate": statement.predicate,
+                        "source": document.filename,
+                        "old_source": document.filename,
+                        "valid_to": statement.valid_to.isoformat(),
+                        "valid_to_anchor": statement.valid_to_anchor,
+                    },
+                    fingerprint_key=(
+                        DriftType.CONFIRMED_STALE.value,
+                        "document",
+                        str(document_id),
+                    ),
+                )
+            )
+        return candidates
 
     def _match_superseded_reuse(
         self,

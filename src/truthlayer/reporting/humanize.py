@@ -42,6 +42,12 @@ _WHY = {
         "或标题/版次中的周期标签推算；因此只作提示、不阻断。日期可能属实，"
         "需要人工核对原文后确认，而不是由系统自动判死。"
     ),
+    "confirmed_stale.document_self_declared_expired": (
+        "这份文档在自己的原文（抬头/正文声明）中明确给出了有效期截止日，"
+        "且该日期已经过去；文档没有被任何新版显式接替。这是文档自行声明的"
+        "失效，不是系统按周期或年龄推断。下列逐条记录只是同一份文档失效的"
+        "明细，AI 若继续引用其中内容，会向用户传递整份已失效的制度或标准。"
+    ),
     "superseded": (
         "存在显式声明的新版本文档，旧版本不应再作为 AI 的知识来源；其中未被新版本覆盖的"
         "内容可能继续造成错误引用。"
@@ -76,6 +82,12 @@ _RECOMMEND = {
         "请确认整份文档是否需要更新或下线；若日期只是从周期标签推算且文件"
         "实际仍在执行，可标记为误报，系统会记住该判断。"
     ),
+    "confirmed_stale.document_self_declared_expired": (
+        "请业务负责人核对该文件是否已被新文件替代、续期或应当下线归档："
+        "若确已失效，请以现行文件为准并停止引用；若实际仍在执行（例如已"
+        "延期但原文未更新），可保留记录或标记为误报，系统会记住该判断。"
+        "展开明细可下钻到单条事实逐条处置。"
+    ),
     "superseded": (
         "请确认新版文档已完整覆盖旧版内容并完成切换；"
         "若新旧版本需要同时生效，则保留旧记录。"
@@ -94,6 +106,12 @@ _SUGGESTED = {
     ),
     "confirmed_stale": (
         ResolutionDecision.ACCEPT_NEWER.value,
+        ResolutionDecision.KEEP_OLD.value,
+        ResolutionDecision.FALSE_POSITIVE.value,
+    ),
+    # A self-declared-expired document has no known successor, so there is no
+    # "newer value" to accept: either acknowledge/keep or dismiss as FP.
+    "confirmed_stale.document_self_declared_expired": (
         ResolutionDecision.KEEP_OLD.value,
         ResolutionDecision.FALSE_POSITIVE.value,
     ),
@@ -119,16 +137,23 @@ _SUGGESTED = {
 
 def narrative(drift_type: str, detail: dict[str, Any]) -> Narrative:
     reason_key = drift_type
+    suggested_key = drift_type
     if drift_type == "possibly_stale" and detail.get("reason") == (
         "inferred_validity_expired"
     ):
         reason_key = "possibly_stale.inferred_validity_expired"
+    if (
+        drift_type == "confirmed_stale"
+        and detail.get("reason") == "document_self_declared_expired"
+    ):
+        reason_key = "confirmed_stale.document_self_declared_expired"
+        suggested_key = reason_key
     why = _WHY.get(reason_key, "检测器发现了需要人工确认的知识异常。")
     recommendation = _RECOMMEND.get(
         reason_key,
         "请核对来源与证据后做出处置（resolve）或忽略（ignore）。",
     )
-    suggested = _SUGGESTED.get(drift_type, ())
+    suggested = _SUGGESTED.get(suggested_key, ())
     return Narrative(
         title=short_title(drift_type, detail),
         why=why,
@@ -144,6 +169,9 @@ _GROUP_TITLE = {
     "possibly_stale": (
         "文档《{filename}》时效性存疑，{count} 条事实可能已过期"
     ),
+    "confirmed_stale.document_self_declared_expired": (
+        "文档《{filename}》自行声明已于 {valid_to} 失效，{count} 条记录随文档过期"
+    ),
 }
 
 _GROUP_WHY = {
@@ -158,12 +186,22 @@ _GROUP_WHY = {
         "声明或周期标签推算（不阻断）。逐条卡片只是同一问题的重复信号，"
         "真正需要的是对整份文档时效性的一次业务确认。"
     ),
+    "confirmed_stale.document_self_declared_expired": (
+        "这份文档在原文中自行声明了有效期截止日且日期已过（见下方声明原文），"
+        "又没有新版文档显式接替它；下列逐条记录（含失效声明本身与业务内容）"
+        "只是同一份文档失效的明细，真正需要的是对整份文档去留的一次业务确认。"
+    ),
 }
 
 _GROUP_RECOMMEND = {
     "confirmed_stale": (
         "请以更新版文档为准核对这份文档；展开明细可下钻到个别事实，"
         "逐条保留或标记误报。"
+    ),
+    "confirmed_stale.document_self_declared_expired": (
+        "请业务负责人核对该文件是否已被替代、续期或应下线归档："
+        "确已失效请以现行文件为准并停止引用；实际仍在执行可逐条保留或"
+        "标记误报；展开明细可下钻到单条记录。"
     ),
     "possibly_stale": (
         "请业务负责人复核整份文档：确认仍有效可逐条保留，已更新则采纳新值，"
@@ -172,21 +210,38 @@ _GROUP_RECOMMEND = {
 }
 
 
-def group_narrative(drift_type: str, filename: str, count: int) -> Narrative:
-    """Document-level wording for R11 rollups (same type, one source doc)."""
+def group_narrative(
+    drift_type: str,
+    filename: str,
+    count: int,
+    *,
+    head_reason: str | None = None,
+    valid_to: str | None = None,
+) -> Narrative:
+    """Document-level wording for R11 rollups (same type, one source doc).
+
+    ``head_reason`` selects the specialized wording for a group headed by a
+    target=document self-declared-expiry card; ``valid_to`` fills its title.
+    """
+    key = drift_type
+    if (
+        drift_type == "confirmed_stale"
+        and head_reason == "document_self_declared_expired"
+    ):
+        key = "confirmed_stale.document_self_declared_expired"
     return Narrative(
         title=_GROUP_TITLE.get(
-            drift_type,
+            key,
             "文档《{filename}》存在 {count} 条同类问题",
-        ).format(filename=filename, count=count),
+        ).format(filename=filename, count=count, valid_to=valid_to or "—"),
         why=_GROUP_WHY.get(
-            drift_type, "下列事实来自同一份文档，属于同一个文档级问题。"
+            key, "下列事实来自同一份文档，属于同一个文档级问题。"
         ),
         recommendation=_GROUP_RECOMMEND.get(
-            drift_type,
+            key,
             "请核对来源与证据后做出处置（resolve）或忽略（ignore）。",
         ),
-        suggested_decisions=tuple(_SUGGESTED.get(drift_type, ())),
+        suggested_decisions=tuple(_SUGGESTED.get(key, ())),
     )
 
 
@@ -208,6 +263,12 @@ def short_title(drift_type: str, detail: dict[str, Any]) -> str:
             f"（{detail.get('old_source')} ↔ {detail.get('new_source')}）"
         )
     if drift_type == "confirmed_stale":
+        if detail.get("reason") == "document_self_declared_expired":
+            return (
+                f"文档 {detail.get('old_source') or detail.get('source')} "
+                f"自行声明有效期至 {detail.get('valid_to')}，该日期已过 "
+                f"[document_self_declared_expired]"
+            )
         return f"{head} 已确认过期 [{detail.get('reason')}]"
     if drift_type == "reused_stale_value":
         return (
@@ -257,6 +318,12 @@ def plain_title(drift_type: str, detail: dict[str, Any]) -> str:
             f"{old!s} 与 {new!s}"
         )
     if drift_type == "confirmed_stale":
+        if detail.get("reason") == "document_self_declared_expired":
+            return (
+                f"文档「{detail.get('old_source') or detail.get('source')}」"
+                f"自行声明的有效期（至 {detail.get('valid_to')}）已过，"
+                f"整份文件不应再被 AI 引用"
+            )
         return f"「{subject}」的「{predicate}」已过期，不应再被 AI 引用"
     if drift_type == "reused_stale_value":
         return (

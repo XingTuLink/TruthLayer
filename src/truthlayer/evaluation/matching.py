@@ -27,6 +27,7 @@ class NormalizedExpectation:
     severity: Severity | None
     old_source: str | None
     new_source: str | None
+    target: str | None = None
 
     @classmethod
     def from_expected(
@@ -48,6 +49,7 @@ class NormalizedExpectation:
             severity=expected.severity,
             old_source=expected.old_source,
             new_source=expected.new_source,
+            target=expected.target,
         )
 
 
@@ -75,6 +77,8 @@ def satisfies(candidate: DriftCandidate, exp: NormalizedExpectation) -> bool:
     if exp.old_source is not None and _candidate_old_source(candidate) != exp.old_source:
         return False
     if exp.new_source is not None and _candidate_new_source(candidate) != exp.new_source:
+        return False
+    if exp.target is not None and candidate.target_type.value != exp.target:
         return False
     return True
 

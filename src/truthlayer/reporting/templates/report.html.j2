@@ -286,11 +286,26 @@
         <div class="title">{{ g.title }}</div>
         <div class="why"><strong>问题说明：</strong>{{ g.why }}</div>
 
+        {% if g.evidence %}
+        <details class="evidence" open>
+          <summary>文档失效声明原文（{{ g.evidence | length }} 处）—— 点击收起</summary>
+          {% for ev in g.evidence %}
+          <blockquote class="evidence">
+            “{{ ev.quote }}”
+            <span class="src">
+              — {{ ev.filename or '未知来源' }}{% if ev.page %} · 第 {{ ev.page }} 页{% endif %}
+              {% if ev.source_type %} · {{ ev.source_type }}{% endif %}
+            </span>
+          </blockquote>
+          {% endfor %}
+        </details>
+        {% endif %}
+
         <details class="evidence">
           <summary>事实明细（{{ g.count }} 条，可下钻逐条处置）—— 点击展开</summary>
           {% for mi in g.issues %}
           <div class="grp-item">
-            <div class="val">{{ mi.subject or '—' }} / {{ mi.predicate or '—' }}{% if mi.old_fact %} = {{ mi.old_fact.object_display }}{% endif %}</div>
+            <div class="val">{% if mi.detail.get('reason') == 'document_self_declared_expired' %}<span class="badge type">文档声明</span> {% endif %}{{ mi.subject or '—' }} / {{ mi.predicate or '—' }}{% if mi.old_fact %} = {{ mi.old_fact.object_display }}{% endif %}</div>
             <div class="meta">
               {% if mi.old_fact %}有效期 {{ mi.old_fact.valid_from or '?' }} ~ {{ mi.old_fact.valid_to or '至今' }} · {% endif %}
               <code>{{ mi.id }}</code>
