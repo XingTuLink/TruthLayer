@@ -413,17 +413,18 @@ class StaleDetector:
     def _is_expired_validity_statement(fact: FactView, as_of) -> bool:
         """Whether a fact is the document's own expired validity-end claim.
 
-        Strict shape, model-free: the object is the expiry date itself (a
-        string ISO date equal to ``valid_to``), the predicate states a
-        validity end, expiry is evidence-anchored (quoted / legacy), and the
-        date is past. Business rows carry numbers as objects, so they can
-        never satisfy this shape.
+        Strict shape, model-free: the object is the expiry date itself — a
+        ``date`` scalar (real extractor output) or a string ISO date (harness
+        rows) equal to ``valid_to`` — the predicate states a validity end,
+        expiry is evidence-anchored (quoted / legacy), and the date is past.
+        Business rows carry numbers/entities as objects, so they can never
+        satisfy this shape.
         """
         if fact.valid_to is None or fact.valid_to >= as_of:
             return False
         if fact.valid_to_anchor in REVIEW_ONLY_ANCHORS:
             return False
-        if fact.object_type != "string":
+        if fact.object_type not in ("date", "string"):
             return False
         predicate = (fact.predicate or "").strip().casefold()
         if not (
@@ -431,10 +432,16 @@ class StaleDetector:
             or predicate in _VALIDITY_END_PREDICATES
         ):
             return False
-        try:
-            return date.fromisoformat(str(fact.object_value)) == fact.valid_to
-        except (ValueError, TypeError):
-            return False
+        raw_object = fact.object_value
+        if fact.object_type == "date":
+            object_date = (
+                raw_object
+                if isinstance(raw_object, date)
+                else date.fromisoformat(str(raw_object).strip())
+            )
+        else:
+            object_date = date.fromisoformat(str(raw_object).strip())
+        return object_date == fact.valid_to
 
     def _expired_statement_documents(
         self, state: KnowledgeState, as_of

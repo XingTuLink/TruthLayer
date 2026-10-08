@@ -330,6 +330,27 @@ def test_silent_when_document_declares_own_quoted_expiry(context):
     assert _reuse_candidates(state, context) == []
 
 
+def test_silent_when_expiry_statement_object_is_typed_date(context):
+    """run18: the real extractor types the expiry object as ``date`` and
+    words the predicate 失效日期 — the declaration gate must still recognize
+    it (the string-only gate let three R16 highs through in run18)."""
+    facts = _declared_expiry_facts()
+    facts[2] = make_fact(
+        "stmt",
+        subject="差旅标准2022版",
+        predicate="失效日期",
+        value=date(2023, 12, 31),
+        object_type="date",
+        document="travel_2022.pdf",
+        valid_from=date(2022, 3, 1),
+        valid_to=date(2023, 12, 31),
+        valid_to_anchor="quoted",
+    )
+    state = build_state(facts, documents=_declared_expiry_docs())
+
+    assert _reuse_candidates(state, context) == []
+
+
 def test_silent_when_expiry_statement_has_legacy_null_anchor(context):
     """Pre-v6 rows carry no anchor; the expiry statement stays trusted."""
     state = build_state(

@@ -128,6 +128,54 @@ def test_legacy_null_anchor_statement_still_trusted(context):
     assert len(_doc_candidates(state, context)) == 1
 
 
+@pytest.mark.parametrize("as_date_instance", [True, False])
+def test_date_typed_statement_object_emits_card(context, as_date_instance):
+    # The real extractor (fact-extract-v6+) types the expiry object as
+    # ``date``; state loading restores a date instance, while JSONB/harness
+    # rows may carry an ISO string. Both were missed by the original
+    # string-only gate (run18 regression).
+    expiry = date(2023, 12, 31)
+    statement = make_fact(
+        "stmt",
+        subject=STMT_SUBJECT,
+        predicate="失效日期",
+        value=expiry if as_date_instance else "2023-12-31",
+        object_type="date",
+        document=DOC_NAME,
+        valid_from=date(2022, 3, 1),
+        valid_to=expiry,
+        valid_to_anchor="quoted",
+    )
+
+    state = build_state([statement, _biz()], documents=_docs())
+
+    hits = _doc_candidates(state, context)
+    assert len(hits) == 1
+    assert hits[0].predicate == "失效日期"
+    assert hits[0].detail["valid_to"] == "2023-12-31"
+
+
+def test_abolition_notice_predicate_stays_silent_with_date_object(context):
+    # run18 doc 10 shape: "原手册同时废止" — a date-typed, quoted, past
+    # 废止日期 fact on the current chain head. It names ANOTHER edition's
+    # repeal; the predicate is outside the validity-end vocabulary, so no
+    # document card (and no fact card) regardless of the date object type.
+    statement = make_fact(
+        "repeal",
+        subject="员工手册2025版",
+        predicate="废止日期",
+        value=date(2025, 1, 1),
+        object_type="date",
+        document=DOC_NAME,
+        valid_to=date(2025, 1, 1),
+        valid_to_anchor="quoted",
+    )
+
+    state = build_state([statement, _biz()], documents=_docs())
+
+    assert _doc_candidates(state, context) == []
+
+
 @pytest.mark.parametrize("predicate", ["有效期至", "有效期截止", "失效日期"])
 def test_validity_end_predicate_variants_emit_card(context, predicate):
     state = build_state(

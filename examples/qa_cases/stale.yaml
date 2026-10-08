@@ -518,7 +518,7 @@ cases:
       - {type: confirmed_stale, target: document, subject: stdoc, predicate: 有效期至, severity: medium, old_source: 差旅标准_2022.pdf}
 
   - id: stale_document_self_declared_expiry
-    title: 独立文档自带逐字锚定的已过期有效期声明 → target=document 一张 confirmed，日期不向行事实传播
+    title: 独立文档自带逐字锚定的已过期有效期声明（真实抽取形态：date 型对象/谓词「失效日期」）→ target=document 一张 confirmed，日期不向行事实传播
     category: positive
     as_of: 2026-10-06
     documents:
@@ -528,15 +528,32 @@ cases:
       - {id: p1, name: 直辖市住宿上限, type: policy}
       - {id: p2, name: 地级市住宿上限, type: policy}
     facts:
-      # 文档自己的失效声明：逐字锚定、已过期，文档卡的唯一证据。
-      - {id: f_stmt, subject: stdoc, predicate: 有效期至, value: "2023-12-31", value_type: string, source: dstd, valid_to: 2023-12-31, valid_to_anchor: quoted}
+      # 文档自己的失效声明：date 标量对象（fact-extract 真实产出）、逐字锚定、
+      # 已过期，文档卡的唯一证据（run18：03 差旅标准同形）。
+      - {id: f_stmt, subject: stdoc, predicate: 失效日期, value: "2023-12-31", value_type: date, source: dstd, valid_from: 2022-03-01, valid_to: 2023-12-31, valid_to_anchor: quoted}
       # 行事实不继承声明日期，只按年龄出 possibly，报告层折叠进文档卡。
       - {id: f_biz1, subject: p1, predicate: lodging_cap, value: 350, value_type: number, source: dstd, valid_from: 2022-03-01, measure_unit: "元/晚"}
       - {id: f_biz2, subject: p2, predicate: lodging_cap, value: 280, value_type: number, source: dstd, valid_from: 2022-03-01, measure_unit: "元/晚"}
     expected_drifts:
-      - {type: confirmed_stale, target: document, subject: stdoc, predicate: 有效期至, severity: medium, old_source: 差旅标准_2022.pdf}
+      - {type: confirmed_stale, target: document, subject: stdoc, predicate: 失效日期, severity: medium, old_source: 差旅标准_2022.pdf}
       - {type: possibly_stale, subject: p1, predicate: lodging_cap, severity: warning}
       - {type: possibly_stale, subject: p2, predicate: lodging_cap, severity: warning}
+
+  - id: stale_neg_abolition_notice_naming_old_edition
+    title: 负向（run18 10 号手册形）：谓词「废止日期」+date 型对象声明的是旧版被废止/新版施行，不是本文档自失效 → 无文档卡
+    category: negative
+    as_of: 2026-10-06
+    documents:
+      # 链头手册（无后继）；声明原文形如「本手册自2025-01-01施行，原手册同时废止」。
+      - {id: dhead, filename: 员工手册_2025.docx, source_type: corporate, group: handbook}
+    entities:
+      - {id: docent, name: 员工手册（2025版）, type: policy}
+      - {id: p1, name: 年假天数, type: policy}
+    facts:
+      # 对象虽是 date 且 valid_to 逐字锚定、日期已过，但谓词是「废止（旧版）」
+      # 语义，不属于有效期结束谓词词表 → 文档卡与行级卡都不出。
+      - {id: f_repeal, subject: docent, predicate: 废止日期, value: "2025-01-01", value_type: date, source: dhead, valid_to: 2025-01-01, valid_to_anchor: quoted}
+      - {id: f_biz, subject: p1, predicate: annual_leave_days, value: 10, value_type: number, source: dhead, valid_from: 2025-01-01, measure_unit: "天/年"}
 
   - id: stale_self_declared_expiry_suppressed_on_version_chain
     title: 版本链旧版虽自带过期声明，文档级信号由 superseded 承载，不重复出自声明文档卡
