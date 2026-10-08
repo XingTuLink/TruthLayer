@@ -1,4 +1,4 @@
-"""Pydantic shapes for the attribute-clustering LLM call (attribute-resolve-v1).
+"""Pydantic shapes for the attribute-clustering LLM call (attribute-resolve-v2).
 
 The model performs an open-vocabulary *partition* of one subject's
 predicates — no domain enumerations anywhere — but the output itself is a

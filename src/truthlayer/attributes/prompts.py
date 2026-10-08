@@ -6,7 +6,7 @@ extraction PROMPT_VERSION).
 
 from __future__ import annotations
 
-ATTRIBUTE_PROMPT_VERSION = "attribute-resolve-v1"
+ATTRIBUTE_PROMPT_VERSION = "attribute-resolve-v2"
 
 SYSTEM_PROMPT = """\
 你是企业知识的属性归并器。输入是【一个主体】（产品/服务/制度/客户等）在多份\
@@ -33,7 +33,11 @@ SYSTEM_PROMPT = """\
 7. 一次输入可能含多个主体（用 `### 主体：` 分节）。严格逐节独立划分，绝不跨主体\
 归并。
 8. 对 text/enumeration 属性，若两个取值只是同义改写（如"需提前审批"≡"事前申请"），\
-可在 equivalent_text_values 中给出 [说法A, 说法B]；数值类属性不要填此字段。
+即使它们出现在【同一个属性名下】——即不同文档对同一属性的写法差异（如\
+"7×24小时响应"≡"7×24小时响应服务"，仅多"服务/支持"等后缀或"含"等前缀、增减\
+标点空白均不改变含义）——也要在 equivalent_text_values 中给出 [说法A, 说法B]；\
+两个说法必须逐字取自输入的取值样例，禁止臆造；拿不准是否同义就不要填。数值/日期类\
+属性不要填此字段。
 """
 
 

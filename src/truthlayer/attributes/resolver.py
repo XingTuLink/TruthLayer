@@ -127,6 +127,19 @@ class AttributeResolver:
         }
         seen_predicates: set[str] = set()
 
+        # Normalized surface values actually present on this subject's facts.
+        # Model-proposed text equivalences are only trusted when BOTH members
+        # verbatim match real values (same normalization as
+        # AttributeResolution.is_text_equivalent) — a hallucinated pair must
+        # never suppress a same-predicate conflict.
+        known_text_values: set[str] = set()
+        for facts in shard.facts_by_predicate.values():
+            for fct in facts:
+                if fct.object_type == "string" and fct.object_value is not None:
+                    known_text_values.add(
+                        "".join(str(fct.object_value).split()).casefold()
+                    )
+
         for cluster in section.clusters:
             alias_keys: list[str] = []
             alias_trusted: dict[str, bool] = {}
@@ -142,6 +155,29 @@ class AttributeResolver:
                 span = alias.evidence_span or ""
                 alias_trusted[key] = self._span_supported(span, surfaces[key])
                 alias_keys.append(key)
+
+            # Text-value equivalences apply even to singleton clusters: prompt
+            # v2 asks about surface variants under ONE predicate (e.g.
+            # "7×24小时响应" ≡ "7×24小时响应服务"), which never form a merge.
+            if cluster.value_kind in {"text", "enumeration"}:
+                for pair in cluster.equivalent_text_values:
+                    left = "".join(pair[0].split()).casefold()
+                    right = "".join(pair[1].split()).casefold()
+                    if not left or not right or left == right:
+                        continue
+                    if (
+                        left not in known_text_values
+                        or right not in known_text_values
+                    ):
+                        resolution.notes.append(
+                            f"discarded equivalent_text pair {pair!r} for "
+                            f"subject {shard.subject_name!r} (value not "
+                            f"verbatim-backed by subject facts)"
+                        )
+                        continue
+                    resolution.text_equivalences.add(
+                        (shard.subject_id, left, right)
+                    )
 
             if len(alias_keys) < 2:
                 continue  # singleton or all-invalid: no merge proposed
@@ -188,16 +224,6 @@ class AttributeResolver:
                             resolution.rejected_merges.add(
                                 (shard.subject_id, key_a, key_b)
                             )
-
-            for pair in cluster.equivalent_text_values:
-                if cluster.value_kind in {"text", "enumeration"}:
-                    resolution.text_equivalences.add(
-                        (
-                            shard.subject_id,
-                            pair[0].strip().casefold(),
-                            pair[1].strip().casefold(),
-                        )
-                    )
 
     def _dimension_groups(
         self,

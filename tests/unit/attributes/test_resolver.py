@@ -181,6 +181,95 @@ def test_non_pricing_facts_are_not_eligible():
     assert llm.calls == []  # no shards at all
 
 
+# -- prompt v2: same-predicate text-value equivalence -------------------------
+
+def _text_cluster(name, aliases, *, equivalent_text=()):
+    return {
+        "canonical_name": name,
+        "definition": "服务包含的响应形态",
+        "value_kind": "enumeration",
+        "aliases": [
+            {"predicate": alias, "evidence_span": "服务", "confidence": 0.9}
+            for alias in aliases
+        ],
+        "equivalent_text_values": [list(pair) for pair in equivalent_text],
+    }
+
+
+def _variant_docs():
+    return [pricing_doc("d1.md"), pricing_doc("d2.md")]
+
+
+def _same_predicate_variant_facts():
+    return [
+        fact(
+            "a", predicate="包含服务", value="7×24小时响应",
+            object_type="string", document="d1.md",
+        ),
+        fact(
+            "b", predicate="包含服务", value="7×24小时响应服务",
+            object_type="string", document="d2.md",
+        ),
+        # Second predicate so the subject reaches the LLM at all.
+        fact(
+            "c", predicate="响应方式", value="在线客服",
+            object_type="string", document="d1.md",
+        ),
+    ]
+
+
+def test_singleton_text_cluster_absorbs_value_equivalence():
+    state = build_state(_same_predicate_variant_facts(), _variant_docs())
+    llm = FakeLLM(
+        _envelope(
+            "云客服专业版",
+            [
+                _text_cluster(
+                    "包含服务",
+                    ["包含服务"],
+                    equivalent_text=[("7×24小时响应", "7×24小时响应服务")],
+                ),
+                _text_cluster("响应方式", ["响应方式"]),
+            ],
+        )
+    )
+    resolution = AttributeResolver(llm).resolve(state)
+
+    subject_id = state.facts[0].subject_id
+    assert resolution.is_text_equivalent(
+        subject_id, "7×24小时响应", "7×24小时响应服务"
+    )
+    # Singleton clusters still create no predicate bindings.
+    assert resolution.bindings == {}
+    assert resolution.notes == []
+
+
+def test_equivalent_text_pair_with_unseen_value_is_discarded():
+    state = build_state(_same_predicate_variant_facts(), _variant_docs())
+    llm = FakeLLM(
+        _envelope(
+            "云客服专业版",
+            [
+                _text_cluster(
+                    "包含服务",
+                    ["包含服务"],
+                    equivalent_text=[("7×24小时响应", "模型臆造的全天值守")],
+                ),
+                _text_cluster("响应方式", ["响应方式"]),
+            ],
+        )
+    )
+    resolution = AttributeResolver(llm).resolve(state)
+
+    subject_id = state.facts[0].subject_id
+    assert not resolution.is_text_equivalent(
+        subject_id, "7×24小时响应", "模型臆造的全天值守"
+    )
+    assert any(
+        "discarded equivalent_text pair" in note for note in resolution.notes
+    )
+
+
 def test_deterministic_confluence_key_merges_surface_variants():
     state = build_state(
         [

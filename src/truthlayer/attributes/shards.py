@@ -19,7 +19,10 @@ from truthlayer.detection.state import FactView, KnowledgeState
 #: guarantees cross-split pairs stay visible, so this is a performance knob,
 #: not a correctness boundary.
 DEFAULT_PREDICATE_BUDGET = 60
-MAX_SAMPLES_PER_PREDICATE = 3
+#: Prompt v2 asks the model to normalize same-predicate surface variants, so
+#: the cap is larger than the original 3 and duplicate renders are skipped:
+#: every distinct short value must stand a chance of being co-judged.
+MAX_SAMPLES_PER_PREDICATE = 6
 
 
 @dataclass
@@ -89,6 +92,7 @@ def build_shards(
         order: list[str] = []
         facts_by_predicate: dict[str, list[FactView]] = defaultdict(list)
         docs_seen: dict[str, set[str]] = defaultdict(set)
+        samples_seen: dict[str, set[str]] = defaultdict(set)
         subject_name = facts[0].subject_name
 
         for fact in sorted(facts, key=lambda f: (f.predicate, str(f.id))):
@@ -103,8 +107,13 @@ def build_shards(
                 docs_seen[key].add(doc.filename)
                 if doc.source_type not in descriptor.source_types:
                     descriptor.source_types.append(doc.source_type)
-            if len(descriptor.samples) < MAX_SAMPLES_PER_PREDICATE:
-                descriptor.samples.append(_render_sample(fact))
+            rendered = _render_sample(fact)
+            if (
+                rendered not in samples_seen[key]
+                and len(descriptor.samples) < MAX_SAMPLES_PER_PREDICATE
+            ):
+                descriptor.samples.append(rendered)
+                samples_seen[key].add(rendered)
 
         for key in order:
             predicates[key].source_docs = sorted(docs_seen[key])

@@ -173,6 +173,29 @@ class ConflictDetector:
             resolution is not None
             and resolution.is_eligible(a.id)
             and resolution.is_eligible(b.id)
+            and a.object_type == "string"
+            and b.object_type == "string"
+            and resolution.is_text_equivalent(
+                a.subject_id, a.object_value, b.object_value
+            )
+        ):
+            # Prompt v2: same-predicate text/enum surface variants the model
+            # judged synonymous (e.g. "7×24小时响应" ≡ "7×24小时响应服务").
+            # The resolver only accepts pairs verbatim-backed by the subject's
+            # own facts, so this is an auditable downgrade, never an upgrade.
+            self._channel(
+                ChannelKind.NORMALIZED_EQUIVALENT,
+                old_fact,
+                new_fact,
+                state,
+                reason="same_predicate_text_equivalence",
+            )
+            return None
+
+        if (
+            resolution is not None
+            and resolution.is_eligible(a.id)
+            and resolution.is_eligible(b.id)
             and self._is_free_text(state, a.subject_id, predicate_key)
         ):
             # A × text tightened (§5.1-4): literal-different prose values are

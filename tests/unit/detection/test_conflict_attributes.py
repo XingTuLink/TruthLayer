@@ -360,6 +360,83 @@ def test_untrusted_b_merge_is_pending_with_other_reason(context):
     assert pending[0].reason == "merged_pair_anchor_unverified"
 
 
+# -- prompt v2：同谓词短枚举形态差异，模型判同义 → 审计通道，不阻断 ------------
+
+SERVICE_DOC_A = "02_服务订单.md"
+SERVICE_DOC_B = "28_服务订单.md"
+
+
+def _same_predicate_service_facts():
+    return [
+        make_fact(
+            "a", subject="云客服专业版", predicate="包含服务",
+            value="7×24小时响应", object_type="string",
+            document=SERVICE_DOC_A,
+        ),
+        make_fact(
+            "b", subject="云客服专业版", predicate="包含服务",
+            value="7×24小时响应服务", object_type="string",
+            document=SERVICE_DOC_B,
+        ),
+        # Second predicate exists only so the subject is packed and sent to
+        # the clustering LLM (single-predicate subjects skip the LLM).
+        make_fact(
+            "c", subject="云客服专业版", predicate="响应方式",
+            value="在线客服", object_type="string",
+            document=SERVICE_DOC_A,
+        ),
+    ]
+
+
+def _service_docs():
+    return [
+        make_document(SERVICE_DOC_A, source_type="pricing"),
+        make_document(SERVICE_DOC_B, source_type="pricing"),
+    ]
+
+
+def test_same_predicate_text_variant_judged_equivalent_is_suppressed(context):
+    facts = _same_predicate_service_facts()
+    llm = FakeLLM(
+        _merge_envelope(
+            canonical="包含服务",
+            aliases=["包含服务"],
+            value_kind="enumeration",
+            evidence="服务",
+            equivalent_text=[["7×24小时响应", "7×24小时响应服务"]],
+        )
+    )
+    candidates, items = _run(facts, _service_docs(), llm, context)
+
+    assert candidates == []
+    equivalent = [i for i in items if i.kind is ChannelKind.NORMALIZED_EQUIVALENT]
+    assert len(equivalent) == 1
+    assert equivalent[0].reason == "same_predicate_text_equivalence"
+    assert equivalent[0].value_a == "7×24小时响应"
+    assert equivalent[0].value_b == "7×24小时响应服务"
+
+
+def test_same_predicate_text_variant_seen_but_not_judged_still_blocks(context):
+    facts = _same_predicate_service_facts()
+    # The model sees the predicate but returns no equivalence: it cannot
+    # downgrade by silence — blocking behavior is preserved.
+    llm = FakeLLM(
+        _merge_envelope(
+            canonical="包含服务",
+            aliases=["包含服务"],
+            value_kind="enumeration",
+            evidence="服务",
+        )
+    )
+    candidates, items = _run(facts, _service_docs(), llm, context)
+
+    assert len(candidates) == 1
+    assert candidates[0].drift_type.value == "conflict"
+    assert [
+        i for i in items if i.kind is ChannelKind.NORMALIZED_EQUIVALENT
+    ] == []
+
+
 # -- 无 LLM 时检测行为完全不变 -------------------------------------------------
 
 def test_no_resolution_path_is_identical_to_legacy(context):
